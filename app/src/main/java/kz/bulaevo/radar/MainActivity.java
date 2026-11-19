@@ -38,6 +38,7 @@ public class MainActivity extends Activity implements PermissionHost {
     private final List<Tab> tabs = new ArrayList<>();
     private final List<TextView> tabButtons = new ArrayList<>();
     private FrameLayout content;
+    private ServiceTab serviceTab;
     private int current = -1;
     private boolean resumed;
 
@@ -61,7 +62,8 @@ public class MainActivity extends Activity implements PermissionHost {
         tabs.add(new SpectrumTab(this, hub, this));
         tabs.add(new CameraTab(this, hub, this));
         tabs.add(new MagTab(this));
-        tabs.add(new ServiceTab(this, hub, this));
+        serviceTab = new ServiceTab(this, hub, this);
+        tabs.add(serviceTab);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -94,6 +96,40 @@ public class MainActivity extends Activity implements PermissionHost {
         root.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(root);
         show(0);
+        handleIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(android.content.Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIntent(intent);
+    }
+
+    /** Служебные параметры запуска для автопроверки: tab=N, start=true, act=selftest|calibrate|info. */
+    private void handleIntent(android.content.Intent in) {
+        if (in == null) {
+            return;
+        }
+        int t = in.getIntExtra("tab", -1);
+        if (t >= 0 && t < tabs.size()) {
+            show(t);
+        }
+        final boolean start = in.getBooleanExtra("start", false);
+        final String act = in.getStringExtra("act");
+        if (start || act != null) {
+            content.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (start) {
+                        hub.start();
+                    }
+                    if (act != null) {
+                        serviceTab.debugAction(act);
+                    }
+                }
+            }, 800);
+        }
     }
 
     private void show(int idx) {

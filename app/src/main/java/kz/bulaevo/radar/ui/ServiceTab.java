@@ -148,6 +148,17 @@ public final class ServiceTab implements Tab {
         // ничего: экран статический
     }
 
+    /** Запуск действий без нажатий: нужен для автопроверки в эмуляторе. */
+    public void debugAction(String act) {
+        if ("selftest".equals(act)) {
+            runSelfTest();
+        } else if ("calibrate".equals(act)) {
+            runCalibration();
+        } else if ("info".equals(act)) {
+            showDeviceInfo();
+        }
+    }
+
     @Override
     public void onHide() {
         calibrator.cancel();

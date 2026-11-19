@@ -173,7 +173,7 @@ public class RadarMapView extends TickView {
         final float d = getResources().getDisplayMetrics().density;
         final float w = getWidth();
         final float h = getHeight();
-        final float margin = (mini ? 6f : 16f) * d;
+        final float margin = (mini ? 6f : 38f) * d;
         final float cx = w / 2f;
         final float cy = h / 2f;
         final float rv = Math.min(w, h) / 2f - margin;

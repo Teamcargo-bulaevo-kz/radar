@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Дымовой тест в эмуляторе: ставим APK, запускаем, обходим вкладки, снимаем скриншоты, ищем падения.
+# Дымовой тест в эмуляторе: ставим APK, запускаем, обходим вкладки (параметры запуска), снимаем скриншоты, ищем падения.
 set -u
 PKG=kz.bulaevo.radar
 OUT=smoke-out
@@ -11,27 +11,34 @@ adb shell pm grant "$PKG" android.permission.CAMERA 2>&1 | tee -a "$OUT/install.
 adb logcat -c
 
 shot() { adb exec-out screencap -p > "$OUT/shots/$1.png"; }
+launch() { adb shell am start -n "$PKG/.MainActivity" "$@" >/dev/null 2>&1; }
 
-adb shell am start -n "$PKG/.MainActivity"
+launch
 sleep 8
 shot 00_start
 
 : > "$OUT/tabs.log"
-i=1
+i=0
 if [ -f tools/tabs.txt ]; then
   while IFS= read -r tab || [ -n "$tab" ]; do
     [ -z "$tab" ] && continue
-    n=$(printf '%02d' "$i")
-    if python3 tools/ui_tap.py "$tab" >> "$OUT/tabs.log" 2>&1; then
-      echo "$n tab '$tab': tapped" >> "$OUT/tabs.log"
-    else
-      echo "$n tab '$tab': TAP FAILED" >> "$OUT/tabs.log"
-    fi
-    sleep 6
+    n=$(printf '%02d' "$((i + 1))")
+    launch --ei tab "$i" --ez start true
+    echo "$n tab '$tab' (index $i): opened" >> "$OUT/tabs.log"
+    sleep 9
     shot "${n}_tab"
     i=$((i + 1))
   done < tools/tabs.txt
 fi
+
+# Сервис: самотест, сведения об устройстве, подбор диапазона
+last=$((i - 1))
+for act in selftest info calibrate; do
+  launch --ei tab "$last" --es act "$act"
+  sleep 14
+  shot "svc_$act"
+  echo "service '$act': done" >> "$OUT/tabs.log"
+done
 
 adb shell dumpsys activity processes 2>/dev/null | grep -i "kz.bulaevo.radar" | head -3 >> "$OUT/tabs.log"
 adb logcat -d > "$OUT/logcat.txt"

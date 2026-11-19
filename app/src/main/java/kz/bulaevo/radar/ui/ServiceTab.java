@@ -224,10 +224,12 @@ public final class ServiceTab implements Tab {
 
     private void showCalibration(ResponseAnalyzer.Result r, ResponseAnalyzer.Pick pick, String source) {
         float[] data = new float[r.count];
-        float best = 0f;
         for (int i = 0; i < r.count; i++) {
             data[i] = Float.isNaN(r.snr[i]) ? 0f : r.snr[i];
-            best = Math.max(best, data[i]);
+        }
+        double bestScore = 0;
+        for (double sc : pick.scores) {
+            bestScore = Math.max(bestScore, sc);
         }
         resp.setDataExtent(0f, r.count * (float) ResponseAnalyzer.BIN_HZ);
         resp.setData(data, r.count);
@@ -236,22 +238,25 @@ public final class ServiceTab implements Tab {
         StringBuilder sb = new StringBuilder();
         sb.append("Микрофон: ").append(source).append("\n\nОценка диапазонов (дБ, выше — лучше):\n");
         for (int b = 0; b < Bands.NAMES.length; b++) {
-            sb.append(b == pick.band ? " ► " : "   ")
+            sb.append(b == pick.band && bestScore >= 8.0 ? " ► " : "   ")
                     .append(String.format(Locale.US, "%-14s %4.0f", Bands.NAMES[b], pick.scores[b])).append('\n');
         }
-        hub.st.band = pick.band;
-        hub.applySettings();
-        sb.append("\nВыбран и применён: ").append(Bands.NAMES[pick.band]).append("\n");
-        if (best < 10f) {
+        if (bestScore < 8.0) {
             status.setText("Звук почти не дошёл до микрофона");
-            sb.append("\nСигнал динамика не слышен микрофону. Проверьте: громкость, наушники, динамик и микрофон не закрыты.");
-        } else if (pick.ultrasoundOk) {
-            status.setText("Готово: тихий ультразвук работает");
-            sb.append("\nУльтразвук проходит хорошо: сонар будет бесшумным.");
+            sb.append("\nСигнал динамика микрофону не слышен, диапазон не менялся. Проверьте: громкость медиа на максимум, "
+                    + "наушники отключены, динамик (нижний торец) и микрофон не закрыты пальцем или чехлом.");
         } else {
-            status.setText("Готово: ультразвук слабый, выбран слышимый диапазон");
-            sb.append("\nУльтразвук через динамик/микрофон этого телефона проходит слабо, поэтому выбран слышимый диапазон: "
-                    + "сонар будет свистеть, зато измеряет уверенно. Можно переключить диапазон кнопкой на любой вкладке.");
+            hub.st.band = pick.band;
+            hub.applySettings();
+            sb.append("\nВыбран и применён: ").append(Bands.NAMES[pick.band]).append("\n");
+            if (!Bands.AUDIBLE[pick.band]) {
+                status.setText("Готово: тихий ультразвук работает");
+                sb.append("\nУльтразвук проходит хорошо: сонар будет бесшумным.");
+            } else {
+                status.setText("Готово: ультразвук слабый, выбран слышимый диапазон");
+                sb.append("\nУльтразвук через динамик/микрофон этого телефона проходит слабо, поэтому выбран слышимый диапазон: "
+                        + "сонар будет свистеть, зато измеряет уверенно. Можно переключить диапазон кнопкой на любой вкладке.");
+            }
         }
         out.setText(sb.toString());
     }

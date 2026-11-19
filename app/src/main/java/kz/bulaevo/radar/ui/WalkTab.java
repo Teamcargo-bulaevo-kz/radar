@@ -106,8 +106,12 @@ public final class WalkTab implements Tab {
                 if (Double.isNaN(free)) {
                     text = "Препятствие впереди. Поводите телефоном вправо-влево, чтобы найти обход.";
                 } else if (Math.abs(free) < 12.0) {
-                    text = "Препятствие впереди, а в стороны не свободнее. Остановитесь.";
                     free = Double.NaN;
+                    if (sidesKnown(heading, now)) {
+                        text = "Препятствие впереди, а в стороны не свободнее. Остановитесь.";
+                    } else {
+                        text = "Препятствие впереди. Поводите телефоном вправо-влево, чтобы найти обход.";
+                    }
                 } else {
                     text = String.format(Locale.US, "Обход %s на %.0f° (там свободно %.1f м)",
                             free > 0 ? "правее" : "левее", Math.abs(free), out[0]);
@@ -128,6 +132,16 @@ public final class WalkTab implements Tab {
                 Haptics.pulse(c, 35);
             }
         }
+    }
+
+    /** Измерялись ли направления в стороне от курса (иначе «в стороны не свободнее» — просто нет данных). */
+    private boolean sidesKnown(double heading, long now) {
+        for (int a = 25; a <= 70; a += 15) {
+            if (!Float.isNaN(hub.sectors.rangeAt(heading + a, now)) || !Float.isNaN(hub.sectors.rangeAt(heading - a, now))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

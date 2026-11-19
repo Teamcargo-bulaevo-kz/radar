@@ -94,6 +94,15 @@ public final class ServiceTab implements Tab {
         }), Ui.cell(ctx));
         col.addView(r3);
 
+        LinearLayout r4 = Ui.row(ctx);
+        r4.addView(Ui.button(ctx, "Проверка наушников (как излучателей)", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                runHeadphoneTest();
+            }
+        }), Ui.cell(ctx));
+        col.addView(r4);
+
         status = Ui.label(ctx, "", 13f, Ui.WARN);
         status.setPadding(0, Ui.dpi(ctx, 8), 0, Ui.dpi(ctx, 2));
         col.addView(status);
@@ -121,11 +130,13 @@ public final class ServiceTab implements Tab {
                     + "как пульт, и медленно повернитесь на месте на 360° за 15–20 секунд. На карте проявятся стены "
                     + "и предметы, голубая линия — очертания комнаты. «Обнулить фон»: направьте в пустое пространство "
                     + "— уберёт ложное эхо корпуса.\n"
-                    + "4. «Дальн.»: расстояние до ближайшего предмета, как лазерная рулетка. Парктроник — вибро.\n"
-                    + "5. «Движ.»: неподвижное исчезает, движущееся светится. «Охрана» включает сигнализацию.\n"
-                    + "6. «Спектр»: все звуки вокруг до 24 кГц, в том числе ультразвук.\n"
-                    + "7. «Камера»: ночное видение из слабого света. В полной темноте камера слепая, там работает сонар.\n"
-                    + "8. «Металл»: магнитометр — поиск металла и проводки рядом.\n\n"
+                    + "4. «Дальн.»: расстояние до ближайшего предмета, как лазерная рулетка. Парктроник: гудки и вибро.\n"
+                    + "5. «Ходьба»: ориентирование в темноте и на улице. Водите телефоном влево-вправо, как фонарём, "
+                    + "перед собой: гудки чаще и выше, чем ближе препятствие, веер показывает, где свободнее.\n"
+                    + "6. «Движ.»: неподвижное исчезает, движущееся светится. «Охрана» включает сигнализацию.\n"
+                    + "7. «Спектр»: все звуки вокруг до 24 кГц, в том числе ультразвук.\n"
+                    + "8. «Камера»: ночное видение из слабого света. В полной темноте камера слепая, там работает сонар.\n"
+                    + "9. «Металл»: магнитометр — поиск металла и проводки рядом.\n\n"
                     + "ЧЕСТНО О ВОЗМОЖНОСТЯХ\n\n"
                     + "Это звуковой радар (сонар), а не камера. Он измеряет расстояния до стен и предметов с точностью "
                     + "несколько сантиметров и рисует очертания, но картинку «как фото» не даёт. Лучше всего видны большие "
@@ -156,6 +167,8 @@ public final class ServiceTab implements Tab {
             runCalibration();
         } else if ("info".equals(act)) {
             showDeviceInfo();
+        } else if ("headphones".equals(act)) {
+            runHeadphoneTest();
         }
     }
 
@@ -183,6 +196,92 @@ public final class ServiceTab implements Tab {
                 });
             }
         }, "selftest").start();
+    }
+
+    // ---- проверка наушников: излучает ли каждый наушник ультразвук в воздух ----
+
+    private final double[][] hp = new double[2][Bands.NAMES.length];
+
+    private void runHeadphoneTest() {
+        if (calibrator.isBusy()) {
+            return;
+        }
+        resp.setVisibility(View.GONE);
+        if (!AudioUtil.wiredHeadphones(c)) {
+            status.setText("Подключите проводные наушники");
+            out.setText("Нужны проводные наушники (разъём 3.5 мм или USB-C). Bluetooth не подходит: он режет высокие "
+                    + "частоты и задерживает звук.\n\nЗачем тест: можно ли использовать левый и правый наушник как два "
+                    + "излучателя вместо одного динамика телефона. Для этого они должны излучать ультразвук в воздух, "
+                    + "а вставные наушники излучают в основном в ухо.\n\nКак проверить: СНИМИТЕ наушники с ушей, "
+                    + "положите их на стол динамиками к нижнему краю телефона на расстоянии около 5 см, подключите и "
+                    + "нажмите кнопку ещё раз. Будет тихий свист около полуминуты.");
+            return;
+        }
+        host.requireAudio(new Runnable() {
+            @Override
+            public void run() {
+                hub.stop();
+                out.setText("Наушники НЕ должны быть на ушах: во время теста играет свист.\n"
+                        + "Положите их динамиками к нижнему краю телефона (микрофон) на расстоянии около 5 см.");
+                headphoneChannel(1);
+            }
+        });
+    }
+
+    private void headphoneChannel(final int channel) {
+        final String name = channel == 1 ? "левый" : "правый";
+        calibrator.start(new BandCalibrator.Callback() {
+            @Override
+            public void onProgress(int percent, String text) {
+                status.setText("Наушники, " + name + ": " + text + " " + percent + "%");
+            }
+
+            @Override
+            public void onDone(ResponseAnalyzer.Result r, ResponseAnalyzer.Pick pick, String source) {
+                System.arraycopy(pick.scores, 0, hp[channel - 1], 0, Bands.NAMES.length);
+                if (channel == 1) {
+                    headphoneChannel(2);
+                } else {
+                    showHeadphoneResult();
+                }
+            }
+
+            @Override
+            public void onError(String message) {
+                status.setText("Тест наушников не удался: " + message);
+            }
+        }, channel, 0.5, 12000);
+    }
+
+    private void showHeadphoneResult() {
+        StringBuilder sb = new StringBuilder("Сила ультразвука из наушников у микрофона телефона (дБ, выше — лучше):\n\n");
+        sb.append(String.format(Locale.US, "%-14s %6s %8s\n", "", "левый", "правый"));
+        double bestL = 0;
+        double bestR = 0;
+        for (int b = 0; b < Bands.NAMES.length; b++) {
+            if (Bands.AUDIBLE[b]) {
+                continue;
+            }
+            sb.append(String.format(Locale.US, "%-14s %6.0f %8.0f\n", Bands.NAMES[b], hp[0][b], hp[1][b]));
+            bestL = Math.max(bestL, hp[0][b]);
+            bestR = Math.max(bestR, hp[1][b]);
+        }
+        sb.append('\n');
+        if (bestL >= 15 && bestR >= 15) {
+            status.setText("Оба наушника излучают ультразвук");
+            sb.append("Хорошо: оба наушника годятся как два излучателя. Стерео-сонар с определением направления "
+                    + "без вращения телефона можно делать.");
+        } else if (bestL >= 15 || bestR >= 15) {
+            status.setText("Ультразвук идёт только из одного наушника");
+            sb.append("Излучает только один наушник (" + (bestL >= 15 ? "левый" : "правый") + "). Проверьте, как они лежат; "
+                    + "если так и есть, для двух излучателей нужны другие наушники.");
+        } else {
+            status.setText("Наушники не излучают ультразвук в воздух");
+            sb.append("Ультразвук из этих наушников почти не слышен. Обычно так у вставных: звук идёт в ухо, наружу "
+                    + "почти ничего. Лучше подойдут накладные или большие закрытые наушники, повёрнутые от себя. "
+                    + "Можно также попробовать слышимый диапазон: он проходит почти всегда, но свистит.");
+        }
+        out.setText(sb.toString());
     }
 
     // ---- подбор диапазона ----

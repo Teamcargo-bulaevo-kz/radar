@@ -19,6 +19,14 @@ public final class SonarSettings {
     public float alarmDb = 22f;
     /** Громкость излучения (доля от максимума цифровой шкалы). */
     public float txAmp = 0.9f;
+    /** Звуковой парктроник (гудки по расстоянию). */
+    public boolean beep = false;
+    /** Пользователь уже сам выбирал, включать ли гудки. */
+    public boolean beepChosen = false;
+    /** Вибро-парктроник. */
+    public boolean vibro = false;
+    /** С какого расстояния гудеть, м. */
+    public float beepMaxM = 3f;
 
     /** Диапазон яркости карты от порога вверх, дБ. */
     public static final float SPAN_DB = 28f;
@@ -32,6 +40,10 @@ public final class SonarSettings {
         detectDb = p.getFloat("detectDb", detectDb);
         lowDb = p.getFloat("lowDb", lowDb);
         alarmDb = p.getFloat("alarmDb", alarmDb);
+        beepChosen = p.contains("beep");
+        beep = p.getBoolean("beep", beep);
+        vibro = p.getBoolean("vibro", vibro);
+        beepMaxM = p.getFloat("beepMaxM", beepMaxM);
     }
 
     public void save(Context c) {
@@ -41,6 +53,9 @@ public final class SonarSettings {
                 .putFloat("detectDb", detectDb)
                 .putFloat("lowDb", lowDb)
                 .putFloat("alarmDb", alarmDb)
+                .putBoolean("beep", beep)
+                .putBoolean("vibro", vibro)
+                .putFloat("beepMaxM", beepMaxM)
                 .apply();
     }
 

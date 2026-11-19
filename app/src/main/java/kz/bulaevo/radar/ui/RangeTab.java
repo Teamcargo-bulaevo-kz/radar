@@ -6,7 +6,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -26,10 +25,9 @@ public final class RangeTab implements Tab, SonarHub.FrameListener {
     private final TextView peaks;
     private final PlotView plot;
     private final SonarPanel panel;
-    private final Button parking;
+    private final BeepControls beepControls;
     private final Handler h = new Handler(Looper.getMainLooper());
     private boolean shown;
-    private boolean vibroOn;
     private long lastPulse;
 
     private final float[] mkX = new float[SonarFrame.MAX_PEAKS];
@@ -60,7 +58,7 @@ public final class RangeTab implements Tab, SonarHub.FrameListener {
                 big.setTextColor(Ui.DIM);
             }
             peaks.setText(peakText);
-            if (vibroOn && hub.isRunning() && !Float.isNaN(d) && d < 1.5f) {
+            if (hub.st.vibro && hub.isRunning() && !Float.isNaN(d) && d < 1.5f) {
                 long interval = (long) Math.max(90, Math.min(700, d * 420));
                 long now = System.currentTimeMillis();
                 if (now - lastPulse >= interval) {
@@ -96,18 +94,8 @@ public final class RangeTab implements Tab, SonarHub.FrameListener {
         peaks.setPadding(Ui.dpi(ctx, 8), Ui.dpi(ctx, 2), Ui.dpi(ctx, 8), Ui.dpi(ctx, 2));
         root.addView(peaks);
 
-        LinearLayout row = Ui.row(ctx);
-        parking = Ui.button(ctx, "Парктроник (вибро): выкл", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                vibroOn = !vibroOn;
-                parking.setText("Парктроник (вибро): " + (vibroOn ? "вкл" : "выкл"));
-                Ui.setOn(parking, vibroOn);
-            }
-        });
-        row.addView(parking, Ui.cell(ctx));
-        row.setPadding(Ui.dpi(ctx, 6), 0, Ui.dpi(ctx, 6), 0);
-        root.addView(row);
+        beepControls = new BeepControls(ctx, hub);
+        root.addView(beepControls.view());
 
         LinearLayout seek = Ui.labeledSeek(ctx, "Порог обнаружения", 6, 30, (int) hub.st.detectDb, "дБ",
                 new Ui.IntCb() {
@@ -137,6 +125,7 @@ public final class RangeTab implements Tab, SonarHub.FrameListener {
     @Override
     public void onShow() {
         shown = true;
+        beepControls.refresh();
         hub.addFrameListener(this);
         panel.onShow();
         h.removeCallbacks(ticker);

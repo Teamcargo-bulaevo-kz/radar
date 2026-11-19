@@ -19,6 +19,9 @@ public final class MapTab implements Tab {
     private final RadarMapView radar;
     private final TextView info;
     private final SonarPanel panel;
+    private android.widget.Button zoomBtn;
+    private static final double[] ZOOMS = {0, 1.0, 2.0, 3.5};
+    private int zoomIdx;
     private final Handler h = new Handler(Looper.getMainLooper());
     private boolean shown;
 
@@ -84,6 +87,13 @@ public final class MapTab implements Tab {
                 MapTab.this.hub.map.reset();
             }
         }), Ui.cell(ctx));
+        zoomBtn = Ui.button(ctx, "Масштаб: вся", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                nextZoom();
+            }
+        });
+        btns.addView(zoomBtn, Ui.cell(ctx));
         btns.setPadding(Ui.dpi(ctx, 6), 0, Ui.dpi(ctx, 6), 0);
         root.addView(btns);
 
@@ -100,6 +110,21 @@ public final class MapTab implements Tab {
 
         panel = new SonarPanel(ctx, hub);
         root.addView(panel.view());
+    }
+
+    /** Масштаб: вся карта → 1 м → 2 м → 3.5 м (только меньше текущей дальности). */
+    private void nextZoom() {
+        double mapR = hub.map.maxRange();
+        for (int i = 1; i <= ZOOMS.length; i++) {
+            int k = (zoomIdx + i) % ZOOMS.length;
+            if (k == 0 || ZOOMS[k] < mapR - 1e-6) {
+                zoomIdx = k;
+                break;
+            }
+        }
+        double z = ZOOMS[zoomIdx];
+        radar.setViewRange(z);
+        zoomBtn.setText(z == 0 ? "Масштаб: вся" : String.format(Locale.US, "Масштаб: %s м", z == Math.floor(z) ? String.valueOf((int) z) : String.valueOf(z)));
     }
 
     @Override

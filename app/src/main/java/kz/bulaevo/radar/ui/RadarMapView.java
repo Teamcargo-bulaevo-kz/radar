@@ -20,6 +20,11 @@ public class RadarMapView extends TickView {
     private volatile boolean live;
     private volatile float nearest = Float.NaN;
     private boolean mini;
+    private volatile double viewR = 0;
+    private boolean[] blocked = new boolean[0];
+    private final Paint lblFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint lblStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path clip = new Path();
 
     private Bitmap bmp;
     private int[] pix;
@@ -64,6 +69,16 @@ public class RadarMapView extends TickView {
         target.setStrokeWidth(2f * d);
         dot.setColor(0xFFE8FFF2);
         dot.setStyle(Paint.Style.FILL);
+        lblFill.setColor(0xFFFFFFFF);
+        lblFill.setTextSize(12f * d);
+        lblFill.setFakeBoldText(true);
+        lblFill.setTextAlign(Paint.Align.CENTER);
+        lblStroke.setColor(0xFF000000);
+        lblStroke.setTextSize(12f * d);
+        lblStroke.setFakeBoldText(true);
+        lblStroke.setTextAlign(Paint.Align.CENTER);
+        lblStroke.setStyle(Paint.Style.STROKE);
+        lblStroke.setStrokeWidth(3f * d);
         setBackgroundColor(0xFF020A07);
         for (int i = 0; i < 256; i++) {
             float v = i / 255f;
@@ -95,6 +110,15 @@ public class RadarMapView extends TickView {
     public void setMap(RoomMap m) {
         map = m;
         lastVersion = -1;
+    }
+
+    /** Масштаб экрана, м (0 — вся карта): ближние предметы видны крупнее. */
+    public void setViewRange(double meters) {
+        viewR = meters;
+    }
+
+    public double viewRange() {
+        return viewR;
     }
 
     public void setMini(boolean mini) {
@@ -181,7 +205,9 @@ public class RadarMapView extends TickView {
             return;
         }
         final RoomMap m = map;
-        final double maxR = m == null ? 7.0 : m.maxRange();
+        final double mapR = m == null ? 7.0 : m.maxRange();
+        final double vr = viewR;
+        final double maxR = (vr > 0 && vr < mapR) ? vr : mapR;
 
         cv.drawCircle(cx, cy, rv, bg);
 
@@ -193,8 +219,18 @@ public class RadarMapView extends TickView {
                 lastBuild = now;
             }
             if (bmp != null) {
-                rect.set(cx - rv, cy - rv, cx + rv, cy + rv);
-                cv.drawBitmap(bmp, null, rect, img);
+                final float sc = (float) (mapR / maxR);
+                rect.set(cx - rv * sc, cy - rv * sc, cx + rv * sc, cy + rv * sc);
+                if (sc > 1.001f) {
+                    cv.save();
+                    clip.reset();
+                    clip.addCircle(cx, cy, rv, Path.Direction.CW);
+                    cv.clipPath(clip);
+                    cv.drawBitmap(bmp, null, rect, img);
+                    cv.restore();
+                } else {
+                    cv.drawBitmap(bmp, null, rect, img);
+                }
             }
         }
 
@@ -253,6 +289,10 @@ public class RadarMapView extends TickView {
             cv.drawPath(path, outline);
         }
 
+        if (m != null && !mini) {
+            drawLabels(cv, m, cx, cy, rv, maxR, d);
+        }
+
         // луч развёртки и цель
         if (live) {
             double rad = Math.toRadians(azimuth);
@@ -266,5 +306,46 @@ public class RadarMapView extends TickView {
             }
         }
         cv.drawCircle(cx, cy, 3.5f * d, dot);
+    }
+
+    /** Подписи расстояний у самых близких объектов контура (не более шести, не ближе 22° друг к другу). */
+    private void drawLabels(Canvas cv, RoomMap m, float cx, float cy, float rv, double maxR, float d) {
+        final int n = m.angleBins;
+        if (blocked.length != n) {
+            blocked = new boolean[n];
+        }
+        java.util.Arrays.fill(blocked, false);
+        for (int k = 0; k < 6; k++) {
+            int best = -1;
+            float bestR = Float.MAX_VALUE;
+            for (int a = 0; a < n; a++) {
+                float r = m.outlineR[a];
+                if (blocked[a] || Float.isNaN(r) || r > maxR) {
+                    continue;
+                }
+                if (r < bestR) {
+                    bestR = r;
+                    best = a;
+                }
+            }
+            if (best < 0) {
+                break;
+            }
+            for (int j = -11; j <= 11; j++) {
+                blocked[((best + j) % n + n) % n] = true;
+            }
+            double rad = Math.toRadians((best + 0.5) / n * 360.0);
+            float sx = (float) Math.sin(rad);
+            float sy = -(float) Math.cos(rad);
+            float rr = (float) (rv * bestR / maxR);
+            float px = cx + sx * rr;
+            float py = cy + sy * rr;
+            cv.drawCircle(px, py, 3.5f * d, dot);
+            String s = bestR >= 1f ? String.format(Locale.US, "%.1f м", bestR) : String.format(Locale.US, "%.2f м", bestR);
+            float tx = px + sx * 20f * d;
+            float ty = py + sy * 14f * d + 4f * d;
+            cv.drawText(s, tx, ty, lblStroke);
+            cv.drawText(s, tx, ty, lblFill);
+        }
     }
 }

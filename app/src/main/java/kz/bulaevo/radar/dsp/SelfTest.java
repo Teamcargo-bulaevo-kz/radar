@@ -59,6 +59,8 @@ public final class SelfTest {
         testResponse(r);
         testRoomMap(r);
         testNight(r);
+        testParking(r);
+        testSectors(r);
         testSpeed(r);
         return r;
     }
@@ -427,6 +429,63 @@ public final class SelfTest {
         }
         r.check(lastNoise < firstNoise * 0.7 && mx - mn > 150, "Ночной режим (накопление + растяжка)",
                 String.format(Locale.US, "шум %.1f → %.1f, диапазон яркости %d..%d из исходных 3..32", firstNoise, lastNoise, mn, mx));
+    }
+
+    private static void testParking(Report r) {
+        boolean mono = true;
+        float prevI = Float.MAX_VALUE;
+        float prevP = Float.MAX_VALUE;
+        // от дальнего к ближнему: период убывает, тон растёт
+        float lastI = 1e9f;
+        float lastP = -1f;
+        for (float d = 3.0f; d >= 0.3f; d -= 0.1f) {
+            float iv = Parking.intervalMs(d);
+            float p = Parking.pitchHz(d, 3.0f);
+            if (iv > lastI + 1e-3 || p < lastP - 1e-3) {
+                mono = false;
+            }
+            lastI = iv;
+            lastP = p;
+        }
+        boolean range = Parking.pitchHz(0.3f, 3f) <= 1500f && Parking.pitchHz(3f, 3f) >= 600f
+                && Parking.intervalMs(0.3f) >= 110f && Parking.intervalMs(10f) <= 1100f;
+        r.check(mono && range, "Парктроник", String.format(Locale.US,
+                "на 3 м: период %.0f мс, %.0f Гц; на 0.5 м: %.0f мс, %.0f Гц",
+                Parking.intervalMs(3f), Parking.pitchHz(3f, 3f), Parking.intervalMs(0.5f), Parking.pitchHz(0.5f, 3f)));
+    }
+
+    /** Ходьба: шест на +30° от курса, ширина луча 12°. Телефон водят влево-вправо. */
+    private static void testSectors(Report r) {
+        SectorMemory m = new SectorMemory();
+        long now = 1000;
+        final double pole = 30.0;
+        final float poleR = 1.6f;
+        final float maxR = 7f;
+        // водим курс от -60° до +60° и обратно, шаг 2°, кадр каждые 20 мс
+        double[] heads = new double[122];
+        for (int i = 0; i < 61; i++) {
+            heads[i] = -60 + 2 * i;
+            heads[61 + i] = 60 - 2 * i;
+        }
+        for (double h : heads) {
+            // луч шириной ±12° видит шест, если направлен на него
+            float seen = Math.abs(h - pole) <= 12 ? poleR : Float.NaN;
+            m.update(h, seen, maxR, now, 12.0);
+            now += 20;
+        }
+        float atPole = m.rangeAt(pole, now);
+        float away = m.rangeAt(-40, now);
+        float[] out = new float[1];
+        // курс прямо на шест: он справа от курса на +30 → если смотрим на 20°, надо обходить
+        double dirToward = m.clearestDirection(20, 60, 15, now, out);
+        float fwd = m.nearestInCone(30, 6, now);
+        // через 6 секунд без измерений память истекает
+        float stale = m.rangeAt(pole, now + 6000);
+        boolean ok = Math.abs(atPole - poleR) < 0.05 && away > 6.5f && fwd < poleR + 0.05
+                && !Double.isNaN(dirToward) && dirToward < -10 && out[0] > 5f && Float.isNaN(stale);
+        r.check(ok, "Ходьба (память по секторам)", String.format(Locale.US,
+                "шест: %.2f м (ждём 1.60), в стороне: %.1f м, обход %.0f° (свободно %.1f м), через 6 с: %s",
+                atPole, away, dirToward, out[0], Float.isNaN(stale) ? "забыто" : "помнит!"));
     }
 
     private static void testSpeed(Report r) {

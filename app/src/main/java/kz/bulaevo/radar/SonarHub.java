@@ -8,9 +8,11 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import kz.bulaevo.radar.audio.AudioUtil;
+import kz.bulaevo.radar.audio.Beeper;
 import kz.bulaevo.radar.audio.SonarEngine;
 import kz.bulaevo.radar.dsp.Bands;
 import kz.bulaevo.radar.dsp.RoomMap;
+import kz.bulaevo.radar.dsp.SectorMemory;
 import kz.bulaevo.radar.dsp.SonarFrame;
 import kz.bulaevo.radar.dsp.SonarProcessor;
 import kz.bulaevo.radar.sensors.OrientationTracker;
@@ -30,6 +32,9 @@ public final class SonarHub implements SonarEngine.Listener {
     public final SonarSettings st = new SonarSettings();
     public final OrientationTracker orient;
     public final RoomMap map = new RoomMap(180, 120);
+    /** Короткая память эха по направлениям для режима «Ходьба». */
+    public final SectorMemory sectors = new SectorMemory();
+    public final Beeper beeper = new Beeper();
     public final Handler ui = new Handler(Looper.getMainLooper());
     public PermissionHost host;
 
@@ -43,6 +48,12 @@ public final class SonarHub implements SonarEngine.Listener {
     private volatile boolean lastWarming = true;
     private volatile long weakSince;
     private volatile long frames;
+
+    private final float[] nearRing = new float[3];
+    private int nearN;
+    private int nearMissed;
+    private volatile float smoothNearest = Float.NaN;
+    private boolean startedWithBeep;
 
     public SonarHub(Context ctx) {
         this.ctx = ctx.getApplicationContext();
@@ -116,14 +127,57 @@ public final class SonarHub implements SonarEngine.Listener {
         lastWarming = true;
         weakSince = 0;
         frames = 0;
-        engine.start(st.band, st.range, st.txAmp);
+        startEngine();
+    }
+
+    private void startEngine() {
+        startedWithBeep = st.beep;
+        nearN = 0;
+        nearMissed = 0;
+        smoothNearest = Float.NaN;
+        sectors.reset();
+        engine.start(st.band, st.range, st.beep ? st.txAmp * Beeper.SONAR_SCALE : st.txAmp);
         SonarProcessor p = engine.processor();
         if (p != null) {
             p.detectDb = st.detectDb;
         }
+        syncBeeper();
+    }
+
+    /** Включить/выключить гудки в соответствии с настройками и состоянием сонара. */
+    private void syncBeeper() {
+        beeper.setMaxDistance(st.beepMaxM);
+        if (engine.isRunning() && st.beep) {
+            beeper.start();
+        } else {
+            beeper.stop();
+        }
+    }
+
+    /** Включить звуковой парктроник (сонар перезапускается: чуть меняется сила излучения). */
+    public void setBeep(boolean on) {
+        st.beep = on;
+        st.save(ctx);
+        if (engine.isRunning() && startedWithBeep != on) {
+            startEngine();
+        } else {
+            syncBeeper();
+        }
+    }
+
+    public void setBeepMax(float meters) {
+        st.beepMaxM = meters;
+        st.save(ctx);
+        beeper.setMaxDistance(meters);
+    }
+
+    /** Ближайшее эхо, сглаженное по трём кадрам, с удержанием при коротких пропусках. */
+    public float smoothNearest() {
+        return smoothNearest;
     }
 
     public void stop() {
+        beeper.stop();
         engine.stop();
     }
 
@@ -136,11 +190,7 @@ public final class SonarHub implements SonarEngine.Listener {
             p.detectDb = st.detectDb;
         }
         if (engine.isRunning() && (engine.band() != st.band || engine.rangeIdx() != st.range)) {
-            engine.start(st.band, st.range, st.txAmp);
-            p = engine.processor();
-            if (p != null) {
-                p.detectDb = st.detectDb;
-            }
+            startEngine();
         }
     }
 
@@ -233,8 +283,27 @@ public final class SonarHub implements SonarEngine.Listener {
             weakSince = 0;
         }
         double az = orient.azimuth();
-        if (!f.warming && mapEnabled) {
-            map.update(az, f, st.lowDb, st.lowDb + SonarSettings.SPAN_DB, 10.0);
+        if (!f.warming) {
+            if (mapEnabled) {
+                map.update(az, f, st.lowDb, st.lowDb + SonarSettings.SPAN_DB, 10.0);
+            }
+            if (mapEnabled || trackOrientation) {
+                sectors.update(az, f.nearestM, Bands.RANGE_M[st.range], System.currentTimeMillis(), 12.0);
+            }
+            if (!Float.isNaN(f.nearestM)) {
+                nearMissed = 0;
+                nearRing[nearN % nearRing.length] = f.nearestM;
+                nearN++;
+                int cnt = Math.min(nearN, nearRing.length);
+                float[] tmp = new float[cnt];
+                System.arraycopy(nearRing, 0, tmp, 0, cnt);
+                java.util.Arrays.sort(tmp);
+                smoothNearest = tmp[cnt / 2];
+            } else if (++nearMissed > 5) {
+                smoothNearest = Float.NaN;
+                nearN = 0;
+            }
+            beeper.setDistance(smoothNearest);
         }
         for (FrameListener l : listeners) {
             try {

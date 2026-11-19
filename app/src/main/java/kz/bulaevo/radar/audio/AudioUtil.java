@@ -165,6 +165,24 @@ public final class AudioUtil {
         return false;
     }
 
+    /** Проводные наушники (3.5 мм или USB). Bluetooth не считается: он режет частоты и добавляет задержку. */
+    public static boolean wiredHeadphones(Context ctx) {
+        try {
+            AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+            AudioDeviceInfo[] devs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+            for (AudioDeviceInfo d : devs) {
+                int t = d.getType();
+                if (t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || t == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                        || t == AudioDeviceInfo.TYPE_USB_HEADSET) {
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {
+            // считаем, что нет
+        }
+        return false;
+    }
+
     public static int musicVolumePercent(Context ctx) {
         AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
         int max = Math.max(1, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC));

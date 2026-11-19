@@ -31,6 +31,9 @@ public final class BandCalibrator {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile boolean cancel;
     private volatile boolean busy;
+    private volatile int channel;
+    private volatile double amp = 0.8;
+    private volatile double f0 = 1000;
 
     public BandCalibrator(Context ctx) {
         this.ctx = ctx.getApplicationContext();
@@ -45,11 +48,23 @@ public final class BandCalibrator {
     }
 
     public void start(final Callback cb) {
+        start(cb, 0, 0.8, 1000);
+    }
+
+    /**
+     * @param channel 0 — как есть (моно), 1 — только левый канал, 2 — только правый (проверка наушников)
+     * @param amp     громкость свипа, доля шкалы
+     * @param f0      начальная частота свипа, Гц (конец всегда 23.5 кГц)
+     */
+    public void start(final Callback cb, final int channel, final double amp, final double f0) {
         if (busy) {
             return;
         }
         busy = true;
         cancel = false;
+        this.channel = channel;
+        this.amp = amp;
+        this.f0 = f0;
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -86,7 +101,17 @@ public final class BandCalibrator {
         final double fs = AudioUtil.FS;
         final int total = (int) (fs * (LEAD + SECONDS + TAIL));
         final short[] rx = new short[total];
-        final short[] sweep = ResponseAnalyzer.makeSweep(fs, SECONDS, 1000, 23500, 0.8);
+        final short[] sweep = ResponseAnalyzer.makeSweep(fs, SECONDS, f0, 23500, amp);
+        final int ch = channel;
+        final short[] data;
+        if (ch == 0) {
+            data = sweep;
+        } else {
+            data = new short[sweep.length * 2];
+            for (int i = 0; i < sweep.length; i++) {
+                data[2 * i + (ch == 1 ? 0 : 1)] = sweep[i];
+            }
+        }
 
         AudioUtil.Rec rec = AudioUtil.openRecorder(ctx, 4096);
         AudioTrack tr = null;
@@ -99,12 +124,12 @@ public final class BandCalibrator {
                     .setAudioFormat(new AudioFormat.Builder()
                             .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                             .setSampleRate(AudioUtil.FS)
-                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                            .setChannelMask(ch == 0 ? AudioFormat.CHANNEL_OUT_MONO : AudioFormat.CHANNEL_OUT_STEREO)
                             .build())
-                    .setBufferSizeInBytes(sweep.length * 2)
+                    .setBufferSizeInBytes(data.length * 2)
                     .setTransferMode(AudioTrack.MODE_STATIC)
                     .build();
-            tr.write(sweep, 0, sweep.length);
+            tr.write(data, 0, data.length);
 
             rec.rec.startRecording();
             int got = 0;
@@ -120,7 +145,7 @@ public final class BandCalibrator {
                 if (!played && got >= (int) (LEAD * fs)) {
                     tr.play();
                     played = true;
-                    progress(cb, 10, "Играю свип 1–23.5 кГц…");
+                    progress(cb, 10, "Играю свип…");
                 }
                 if (played) {
                     progress(cb, 10 + (int) (85.0 * got / total), "Играю свип…");

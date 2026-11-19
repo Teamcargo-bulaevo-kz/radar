@@ -26,9 +26,10 @@ import kz.bulaevo.radar.ui.RangeTab;
 import kz.bulaevo.radar.ui.ServiceTab;
 import kz.bulaevo.radar.ui.SpectrumTab;
 import kz.bulaevo.radar.ui.Tab;
+import kz.bulaevo.radar.ui.WalkTab;
 import kz.bulaevo.radar.ui.Ui;
 
-/** Единственный экран: семь вкладок радара. */
+/** Единственный экран: вкладки радара. */
 public class MainActivity extends Activity implements PermissionHost {
     private static final int REQ_AUDIO = 11;
     private static final int REQ_CAMERA = 12;
@@ -58,6 +59,7 @@ public class MainActivity extends Activity implements PermissionHost {
 
         tabs.add(new MapTab(this, hub));
         tabs.add(new RangeTab(this, hub));
+        tabs.add(new WalkTab(this, hub));
         tabs.add(new MotionTab(this, hub));
         tabs.add(new SpectrumTab(this, hub, this));
         tabs.add(new CameraTab(this, hub, this));
@@ -79,7 +81,7 @@ public class MainActivity extends Activity implements PermissionHost {
             final int idx = i;
             TextView tv = new TextView(this);
             tv.setText(tabs.get(i).title());
-            tv.setTextSize(11.5f);
+            tv.setTextSize(10.5f);
             tv.setTypeface(Typeface.DEFAULT_BOLD);
             tv.setGravity(Gravity.CENTER);
             tv.setSingleLine(true);

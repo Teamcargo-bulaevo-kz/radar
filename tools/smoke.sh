@@ -33,7 +33,7 @@ fi
 
 # Сервис: самотест, сведения об устройстве, подбор диапазона
 last=$((i - 1))
-for act in selftest info calibrate; do
+for act in selftest info calibrate headphones; do
   launch --ei tab "$last" --es act "$act"
   sleep 14
   shot "svc_$act"

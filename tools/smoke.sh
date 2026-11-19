@@ -10,8 +10,8 @@ adb shell pm grant "$PKG" android.permission.RECORD_AUDIO 2>&1 | tee -a "$OUT/in
 adb shell pm grant "$PKG" android.permission.CAMERA 2>&1 | tee -a "$OUT/install.log" || true
 adb logcat -c
 
-shot() { adb exec-out screencap -p > "$OUT/shots/$1.png"; }
-launch() { adb shell am start -n "$PKG/.MainActivity" "$@" >/dev/null 2>&1; }
+shot() { adb exec-out screencap -p </dev/null > "$OUT/shots/$1.png"; }
+launch() { adb shell am start -n "$PKG/.MainActivity" "$@" </dev/null >/dev/null 2>&1; }
 
 launch
 sleep 8

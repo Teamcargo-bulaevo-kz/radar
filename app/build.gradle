@@ -1,0 +1,50 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'kz.bulaevo.radar'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'kz.bulaevo.radar'
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    // Один и тот же ключ для всех сборок: новую версию можно ставить поверх старой без удаления.
+    signingConfigs {
+        radar {
+            storeFile file('radar.keystore')
+            storePassword 'radar-sonar'
+            keyAlias 'radar'
+            keyPassword 'radar-sonar'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.radar
+        }
+        release {
+            signingConfig signingConfigs.radar
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}

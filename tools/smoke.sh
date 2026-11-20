@@ -43,7 +43,7 @@ done
 # Глубина: скачать нейросеть, дать ей поработать на виртуальной комнате эмулятора
 depth=$(grep -n '^Глуб' tools/tabs.txt | head -1 | cut -d: -f1)
 if [ -n "$depth" ]; then
-  launch --ei tab "$((depth - 1))" --es act depth
+  launch --ei tab "$((depth - 1))" --es act depth_ai
   sleep 75
   shot depth_model
   echo "depth tab: model run" >> "$OUT/tabs.log"

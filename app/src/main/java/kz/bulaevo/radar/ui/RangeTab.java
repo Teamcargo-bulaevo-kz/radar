@@ -58,7 +58,7 @@ public final class RangeTab implements Tab, SonarHub.FrameListener {
                 big.setTextColor(Ui.DIM);
             }
             peaks.setText(peakText);
-            if (hub.st.vibro && hub.isRunning() && !Float.isNaN(d) && d < 1.5f) {
+            if (hub.vibroOn() && hub.isRunning() && !Float.isNaN(d) && d < 1.5f) {
                 long interval = (long) Math.max(90, Math.min(700, d * 420));
                 long now = System.currentTimeMillis();
                 if (now - lastPulse >= interval) {

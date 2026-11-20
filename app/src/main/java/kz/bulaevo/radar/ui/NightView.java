@@ -15,6 +15,11 @@ public class NightView extends TickView {
     private int sensorRotation = 90;
     private boolean mirror;
     private String[] hud = new String[0];
+    private float[] boxes = new float[0];
+    private String[] boxLabels = new String[0];
+    private final Paint boxPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint boxText = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final float[] pts = new float[4];
 
     private final Paint img = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final Paint txt = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -27,12 +32,23 @@ public class NightView extends TickView {
         txt.setColor(0xFFE8FFF2);
         txt.setTextSize(12f * d);
         box.setColor(0x99000000);
+        boxPaint.setStyle(Paint.Style.STROKE);
+        boxPaint.setStrokeWidth(2f * d);
+        boxPaint.setColor(0xFFFFE14D);
+        boxText.setColor(0xFF000000);
+        boxText.setTextSize(12f * d);
         setBackgroundColor(0xFF000000);
     }
 
     public void setSensorRotation(int deg, boolean mirror) {
         sensorRotation = ((deg % 360) + 360) % 360;
         this.mirror = mirror;
+    }
+
+    /** Рамки предметов: по 4 числа (l, t, r, b в долях кадра) и подписи. */
+    public void setBoxes(float[] ltrb, String[] labels) {
+        boxes = ltrb;
+        boxLabels = labels;
     }
 
     public void setHud(String... lines) {
@@ -91,6 +107,27 @@ public class NightView extends TickView {
                 mat.postScale(s, s);
                 mat.postTranslate(vw / 2f, vh / 2f);
                 cv.drawBitmap(bmp, mat, img);
+                float[] bx = boxes;
+                String[] bl = boxLabels;
+                float dd = getResources().getDisplayMetrics().density;
+                for (int i = 0; i + 3 < bx.length && i / 4 < bl.length; i += 4) {
+                    pts[0] = bx[i] * fw;
+                    pts[1] = bx[i + 1] * fh;
+                    pts[2] = bx[i + 2] * fw;
+                    pts[3] = bx[i + 3] * fh;
+                    mat.mapPoints(pts);
+                    float l = Math.min(pts[0], pts[2]);
+                    float r = Math.max(pts[0], pts[2]);
+                    float t = Math.min(pts[1], pts[3]);
+                    float b = Math.max(pts[1], pts[3]);
+                    cv.drawRect(l, t, r, b, boxPaint);
+                    String lab = bl[i / 4];
+                    float tw = boxText.measureText(lab);
+                    box.setColor(0xFFFFE14D);
+                    cv.drawRect(l, t - 16f * dd, l + tw + 8f * dd, t, box);
+                    box.setColor(0x99000000);
+                    cv.drawText(lab, l + 4f * dd, t - 4f * dd, boxText);
+                }
             }
         }
         final float d = getResources().getDisplayMetrics().density;

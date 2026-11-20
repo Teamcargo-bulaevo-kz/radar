@@ -119,6 +119,41 @@ public final class DepthMath {
         return sonarNearest * dNear / d;
     }
 
+    /**
+     * Структура сцены из карты обратной глубины d (w×h): edge — сила границы предмета (скачок глубины, 0..1),
+     * shade — рельеф, освещённый сверху-слева (0..1), как будто сцена вылеплена из гипса.
+     */
+    public static void structure(float[] d, int w, int h, float lo, float hi, float[] edge, float[] shade) {
+        float span = hi - lo;
+        if (!(span > 0)) {
+            java.util.Arrays.fill(edge, 0, w * h, 0f);
+            java.util.Arrays.fill(shade, 0, w * h, 0.5f);
+            return;
+        }
+        // свет сверху-слева, спереди
+        final float lx = -0.5f;
+        final float ly = -0.6f;
+        final float lz = 0.62f;
+        final float relief = 40f;
+        for (int y = 0; y < h; y++) {
+            int ym = Math.max(0, y - 1);
+            int yp = Math.min(h - 1, y + 1);
+            for (int x = 0; x < w; x++) {
+                int xm = Math.max(0, x - 1);
+                int xp = Math.min(w - 1, x + 1);
+                float gx = (d[y * w + xp] - d[y * w + xm]) / span * 0.5f;
+                float gy = (d[yp * w + x] - d[ym * w + x]) / span * 0.5f;
+                float g = (float) Math.sqrt(gx * gx + gy * gy);
+                edge[y * w + x] = Math.min(1f, Math.max(0f, (g - 0.012f) * 30f));
+                float nx = -gx * relief;
+                float ny = -gy * relief;
+                float inv = (float) (1.0 / Math.sqrt(nx * nx + ny * ny + 1));
+                float l = (nx * lx + ny * ly + lz) * inv;
+                shade[y * w + x] = Math.max(0f, Math.min(1f, 0.15f + 0.85f * l));
+            }
+        }
+    }
+
     /** Цвет для «близости» t (0 — далеко, 1 — близко): тёмно-синий → голубой → зелёный → жёлтый → красный. */
     public static int color(float t) {
         if (Float.isNaN(t)) {

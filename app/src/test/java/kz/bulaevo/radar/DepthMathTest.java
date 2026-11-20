@@ -3,7 +3,10 @@ package kz.bulaevo.radar;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.util.List;
+
 import kz.bulaevo.radar.dsp.DepthMath;
+import kz.bulaevo.radar.dsp.Guide;
 
 import org.junit.Test;
 
@@ -79,5 +82,60 @@ public class DepthMathTest {
         int near = DepthMath.color(1f);
         assertTrue((far & 0xFF) > ((far >> 16) & 0xFF));   // далеко — синее
         assertTrue(((near >> 16) & 0xFF) > (near & 0xFF)); // близко — красное
+    }
+
+    @Test
+    public void structureFindsObjectEdges() {
+        // стена (далеко) и посередине ящик (близко): граница — по краю ящика, внутри и на стене — ровно
+        int w = 32;
+        int h = 32;
+        float[] d = new float[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                d[y * w + x] = x >= 10 && x < 22 && y >= 10 && y < 22 ? 1f : 0.2f;
+            }
+        }
+        float[] e = new float[w * h];
+        float[] s = new float[w * h];
+        DepthMath.structure(d, w, h, 0.2f, 1f, e, s);
+        assertTrue("край ящика", e[16 * w + 10] > 0.9f);
+        assertTrue("стена ровная", e[3 * w + 3] < 0.05f);
+        assertTrue("внутри ящика ровно", e[16 * w + 16] < 0.05f);
+        // ровные места освещены одинаково, левый край ящика (смотрит на свет) — светлее правого
+        assertEquals(s[3 * w + 3], s[16 * w + 16], 1e-4f);
+        assertTrue("рельеф", s[16 * w + 10] != s[16 * w + 21]);
+    }
+
+    @Test
+    public void guidePicksCloseCentralObject() {
+        // сцена: стена далеко (0.2), стул прямо и близко (0.9), человек слева подальше (0.5)
+        int w = 40;
+        int h = 40;
+        float[] d = new float[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                float v = 0.2f;
+                if (x >= 16 && x < 26 && y >= 20 && y < 36) {
+                    v = 0.9f;
+                } else if (x >= 2 && x < 10 && y >= 8 && y < 34) {
+                    v = 0.5f;
+                }
+                d[y * w + x] = v;
+            }
+        }
+        float[] boxes = {0.05f, 0.2f, 0.25f, 0.85f, 0.4f, 0.5f, 0.65f, 0.9f};
+        String[] names = {"человек", "стул"};
+        // сонар слышит ближайшее — стул — на 1.0 м
+        List<Guide.Item> items = Guide.describe(boxes, names, 2, d, w, h, 0.2f, 0.9f, 1.0f);
+        assertEquals("стул", items.get(0).name);
+        assertEquals(0, items.get(0).side);
+        assertEquals(1.0f, items.get(0).meters, 0.05f);
+        Guide.Item man = items.get(1);
+        assertEquals(-1, man.side);
+        assertTrue("человек дальше стула: " + man.meters, man.meters > 1.5f);
+        assertEquals("стул, прямо, 1,0 метра", items.get(0).phrase());
+        // без сонара — словами
+        List<Guide.Item> rel = Guide.describe(boxes, names, 2, d, w, h, 0.2f, 0.9f, Float.NaN);
+        assertEquals("стул, прямо, близко", rel.get(0).phrase());
     }
 }

@@ -232,6 +232,9 @@ public final class MotionTab implements Tab, SonarHub.FrameListener {
         }
         log.setText("Тревог: " + events + "\n" + logText);
         Haptics.pulse(c, 500);
+        if (hub.st.quiet) {
+            return; // тихий режим: только вибрация и запись в журнале
+        }
         try {
             if (tone == null) {
                 tone = new ToneGenerator(AudioManager.STREAM_ALARM, 90);

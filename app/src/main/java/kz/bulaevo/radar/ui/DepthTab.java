@@ -17,6 +17,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import kz.bulaevo.radar.PermissionHost;
 import kz.bulaevo.radar.SonarHub;
 import kz.bulaevo.radar.ai.DepthModel;
+import kz.bulaevo.radar.ai.ObjectDetector;
+import kz.bulaevo.radar.dsp.Guide;
 import kz.bulaevo.radar.camera.NightCamera;
 import kz.bulaevo.radar.dsp.DepthMath;
 
@@ -26,7 +28,10 @@ import kz.bulaevo.radar.dsp.DepthMath;
  */
 public final class DepthTab implements Tab, NightCamera.Callback {
     private static final String[] MODE_NAMES = {"Авто", "Ночь", "Ночь+", "ИК"};
-    private static final String[] VIEW_NAMES = {"Смесь", "Глубина", "Камера"};
+    private static final String[] VIEW_NAMES = {"Смесь", "Глубина", "Контуры", "Рельеф", "Камера"};
+    private static final int VIEW_CONTOURS = 2;
+    private static final int VIEW_RELIEF = 3;
+    private static final int VIEW_CAMERA = 4;
     /** Размер картинки на экране (по высоте); ширина — по пропорциям кадра. */
     private static final int DISP_H = 320;
 
@@ -50,6 +55,17 @@ public final class DepthTab implements Tab, NightCamera.Callback {
     private int viewMode;
     private boolean sonarOn;
     private boolean front;
+    // ИИ-гид: распознавание предметов + глубина + сонар + голос
+    private final ObjectDetector det = new ObjectDetector();
+    private Button guideBtn;
+    private volatile boolean guideOn;
+    private volatile boolean detDownloading;
+    private volatile java.util.List<Guide.Item> items = new java.util.ArrayList<>();
+    private byte[] detRgb;
+    private android.speech.tts.TextToSpeech tts;
+    private volatile boolean ttsReady;
+    private long lastSpeakMs;
+    private String lastSpoken = "";
     private boolean shown;
     private volatile boolean downloading;
     private volatile String status = "";
@@ -67,6 +83,8 @@ public final class DepthTab implements Tab, NightCamera.Callback {
     private byte[] rgb;
     private float[] depth;
     private float[] scratch;
+    private float[] edge;
+    private float[] shade;
     private byte[] gray;
     private int[] px;
     private float lo = Float.NaN;
@@ -104,6 +122,10 @@ public final class DepthTab implements Tab, NightCamera.Callback {
                 } else {
                     l3 = "Метры: включите «Сонар»";
                 }
+            }
+            if (guideOn) {
+                l3 = guideLine();
+                speakGuide();
             }
             view.setHud(l1, l2, l3);
             dlBtn.setVisibility(model.loaded() || downloading ? View.GONE : View.VISIBLE);
@@ -174,8 +196,17 @@ public final class DepthTab implements Tab, NightCamera.Callback {
         r.addView(flipBtn, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.5f));
         r.addView(modeBtn, Ui.cell(ctx));
         r.addView(viewBtn, Ui.cell(ctx));
-        r.addView(sonarBtn, Ui.cell(ctx));
+        guideBtn = Ui.button(ctx, "ИИ-гид", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setGuide(!guideOn);
+            }
+        });
         panel.addView(r);
+        LinearLayout r2 = Ui.row(ctx);
+        r2.addView(sonarBtn, Ui.cell(ctx));
+        r2.addView(guideBtn, Ui.cell(ctx));
+        panel.addView(r2);
         root.addView(panel, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
     }
@@ -221,6 +252,9 @@ public final class DepthTab implements Tab, NightCamera.Callback {
         shown = false;
         h.removeCallbacks(ticker);
         cam.close();
+        if (tts != null) {
+            tts.stop();
+        }
         if (sonarOn) {
             setSonar(false);
         }
@@ -240,8 +274,137 @@ public final class DepthTab implements Tab, NightCamera.Callback {
 
     /** Для автопроверки: скачать модель без нажатия. */
     public void debugAction(String act) {
-        if ("depth".equals(act) && !model.loaded() && !DepthModel.downloaded(c)) {
+        if (!model.loaded() && !DepthModel.downloaded(c) && !downloading) {
             startDownload();
+        }
+        if ("depth_ai".equals(act) && !guideOn) {
+            setGuide(true);
+        }
+    }
+
+    // ---- ИИ-гид ----
+
+    private void setGuide(boolean on) {
+        guideOn = on;
+        Ui.setOn(guideBtn, on);
+        if (!on) {
+            items = new java.util.ArrayList<>();
+            view.setBoxes(new float[0], new String[0]);
+            if (tts != null) {
+                tts.stop();
+            }
+            return;
+        }
+        android.widget.Toast.makeText(c, hub.st.quiet
+                ? "ИИ-гид в тихом режиме: молча, вибрация — когда предмет близко прямо по курсу"
+                : "ИИ-гид: называет вслух, что впереди и как далеко. Для метров включите «Сонар»",
+                android.widget.Toast.LENGTH_LONG).show();
+        if (!hub.st.quiet && tts == null) {
+            tts = new android.speech.tts.TextToSpeech(c, new android.speech.tts.TextToSpeech.OnInitListener() {
+                @Override
+                public void onInit(int st) {
+                    if (st == android.speech.tts.TextToSpeech.SUCCESS && tts != null) {
+                        int r = tts.setLanguage(new Locale("ru", "RU"));
+                        ttsReady = r != android.speech.tts.TextToSpeech.LANG_MISSING_DATA
+                                && r != android.speech.tts.TextToSpeech.LANG_NOT_SUPPORTED;
+                    }
+                }
+            });
+        }
+        if (det.loaded()) {
+            return;
+        }
+        if (ObjectDetector.downloaded(c)) {
+            loadDetector();
+            return;
+        }
+        if (detDownloading) {
+            return;
+        }
+        detDownloading = true;
+        status = "Скачивание нейросети предметов…";
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String err = ObjectDetector.download(c, null);
+                detDownloading = false;
+                if (err != null) {
+                    error = "не скачалась нейросеть предметов (" + err + ")";
+                    return;
+                }
+                h.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        loadDetector();
+                    }
+                });
+            }
+        }, "objects-download").start();
+    }
+
+    private void loadDetector() {
+        Handler w = wh;
+        if (w == null) {
+            return;
+        }
+        w.post(new Runnable() {
+            @Override
+            public void run() {
+                String err = det.load(c);
+                if (err != null) {
+                    error = err;
+                } else {
+                    detRgb = new byte[det.inW * det.inH * 3];
+                }
+            }
+        });
+    }
+
+    private String guideLine() {
+        if (detDownloading) {
+            return "ИИ-гид: скачивается нейросеть предметов…";
+        }
+        if (!det.loaded()) {
+            return "ИИ-гид: загрузка…";
+        }
+        java.util.List<Guide.Item> it = items;
+        if (it.isEmpty()) {
+            return "ИИ-гид: знакомых предметов в кадре нет";
+        }
+        StringBuilder sb = new StringBuilder("ИИ: ");
+        for (int i = 0; i < Math.min(3, it.size()); i++) {
+            Guide.Item g = it.get(i);
+            sb.append(i > 0 ? " · " : "").append(g.name).append(' ').append(Float.isNaN(g.meters)
+                    ? g.sideWord() : String.format(Locale.US, "%.1f м %s", g.meters, g.sideWord()));
+        }
+        return sb.toString();
+    }
+
+    /** Раз в несколько секунд — главное вслух (или вибрацией в тихом режиме). */
+    private void speakGuide() {
+        java.util.List<Guide.Item> it = items;
+        long now = System.currentTimeMillis();
+        if (it.isEmpty() || now - lastSpeakMs < 3500) {
+            return;
+        }
+        Guide.Item top = it.get(0);
+        if (hub.st.quiet) {
+            boolean close = top.side == 0 && (Float.isNaN(top.meters) ? top.near > 0.8f : top.meters < 1.2f);
+            if (close) {
+                Haptics.pulse(c, 80);
+                lastSpeakMs = now;
+            }
+            return;
+        }
+        String phrase = top.phrase();
+        // то же самое не повторяем чаще, чем раз в 10 секунд
+        if (phrase.equals(lastSpoken) && now - lastSpeakMs < 10000) {
+            return;
+        }
+        if (tts != null && ttsReady) {
+            tts.speak(phrase, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "guide");
+            lastSpoken = phrase;
+            lastSpeakMs = now;
         }
     }
 
@@ -372,7 +535,41 @@ public final class DepthTab implements Tab, NightCamera.Callback {
         // обратная глубина модели сдвинута на неизвестную постоянную; считаем от минимума кадра
         float base = Math.min(lo, p2);
         centerMeters = DepthMath.metersFromSonar(nr, p98 - base + 1e-3f, dc - base + 1e-3f);
+        if (guideOn && det.loaded() && detRgb != null) {
+            runGuide(nr);
+        }
         render(pending, pw, ph, prot, true);
+    }
+
+    /** Распознать предметы на том же кадре и объединить с глубиной и сонаром (поток нейросети). */
+    private void runGuide(float sonar) {
+        DepthMath.sampleUpright(pending, pw, ph, prot, detRgb, det.inW, det.inH, 3);
+        java.util.List<ObjectDetector.Det> ds = det.detect(detRgb, 0.5f);
+        int n = Math.min(ds.size(), 8);
+        float[] boxes = new float[n * 4];
+        String[] names = new String[n];
+        for (int i = 0; i < n; i++) {
+            ObjectDetector.Det d = ds.get(i);
+            boxes[i * 4] = d.l;
+            boxes[i * 4 + 1] = d.t;
+            boxes[i * 4 + 2] = d.r;
+            boxes[i * 4 + 3] = d.b;
+            names[i] = d.name;
+        }
+        java.util.List<Guide.Item> res = Guide.describe(boxes, names, n, depth, model.outW, model.outH, lo, hi, sonar);
+        items = res;
+        boolean mirror = cam.isFront();
+        float[] vb = new float[res.size() * 4];
+        String[] vl = new String[res.size()];
+        for (int i = 0; i < res.size(); i++) {
+            Guide.Item g = res.get(i);
+            vb[i * 4] = mirror ? 1 - g.r : g.l;
+            vb[i * 4 + 1] = g.t;
+            vb[i * 4 + 2] = mirror ? 1 - g.l : g.r;
+            vb[i * 4 + 3] = g.b;
+            vl[i] = Float.isNaN(g.meters) ? g.name : String.format(Locale.US, "%s %.1f м", g.name, g.meters);
+        }
+        view.setBoxes(vb, vl);
     }
 
     /** Нарисовать вертикальный кадр: серый из камеры, сверху — раскраска глубины. Вызывается из фоновых потоков. */
@@ -386,7 +583,15 @@ public final class DepthTab implements Tab, NightCamera.Callback {
             px = new int[dw * dh];
         }
         DepthMath.sampleUpright(y, w, hgt, rot, gray, dw, dh, 1);
-        boolean showDepth = withDepth && viewMode != 2 && hi > lo;
+        boolean showDepth = withDepth && viewMode != VIEW_CAMERA && hi > lo;
+        if (showDepth && (viewMode == VIEW_CONTOURS || viewMode == VIEW_RELIEF)) {
+            int n = model.outW * model.outH;
+            if (edge == null || edge.length != n) {
+                edge = new float[n];
+                shade = new float[n];
+            }
+            DepthMath.structure(depth, model.outW, model.outH, lo, hi, edge, shade);
+        }
         float mix = viewMode == 1 ? 1f : 0.65f;
         for (int vy = 0; vy < dh; vy++) {
             int my = showDepth ? Math.min(model.outH - 1, vy * model.outH / dh) : 0;
@@ -398,8 +603,26 @@ public final class DepthTab implements Tab, NightCamera.Callback {
                     continue;
                 }
                 int mx = Math.min(model.outW - 1, vx * model.outW / dw);
-                float t = (depth[my * model.outW + mx] - lo) / (hi - lo);
+                int mi = my * model.outW + mx;
+                float t = (depth[mi] - lo) / (hi - lo);
                 int col = DepthMath.color(t);
+                if (viewMode == VIEW_CONTOURS) {
+                    // тёмная картинка + тонкие контуры камеры + яркие границы предметов цветом расстояния
+                    float ce = camEdge(gray, dw, dh, vx, vy);
+                    float e = edge[mi];
+                    int base = (int) (g * 0.25f + ce * 120f);
+                    int r = Math.min(255, (int) (base * (1 - e) + ((col >> 16) & 0xFF) * e));
+                    int gg = Math.min(255, (int) (base * (1 - e) + ((col >> 8) & 0xFF) * e));
+                    int b = Math.min(255, (int) (base * (1 - e) + (col & 0xFF) * e));
+                    px[i] = 0xFF000000 | (r << 16) | (gg << 8) | b;
+                    continue;
+                }
+                if (viewMode == VIEW_RELIEF) {
+                    int v = (int) (shade[mi] * 230f + g * 0.1f);
+                    v = Math.min(255, v);
+                    px[i] = 0xFF000000 | (v << 16) | (v << 8) | Math.min(255, v + 12);
+                    continue;
+                }
                 int r = (int) (((col >> 16) & 0xFF) * mix + g * (1 - mix));
                 int gg = (int) (((col >> 8) & 0xFF) * mix + g * (1 - mix));
                 int b = (int) ((col & 0xFF) * mix + g * (1 - mix));
@@ -429,6 +652,24 @@ public final class DepthTab implements Tab, NightCamera.Callback {
             px[(cy + k) * dw + cx] = 0xFFFFFFFF;
         }
         view.setFrame(px, dw, dh);
+    }
+
+    /** Сила контура на картинке камеры (оператор Собеля), 0..1. */
+    private static float camEdge(byte[] g, int w, int h, int x, int y) {
+        if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) {
+            return 0f;
+        }
+        int a = g[(y - 1) * w + x - 1] & 0xFF;
+        int b = g[(y - 1) * w + x] & 0xFF;
+        int c = g[(y - 1) * w + x + 1] & 0xFF;
+        int d = g[y * w + x - 1] & 0xFF;
+        int f = g[y * w + x + 1] & 0xFF;
+        int p = g[(y + 1) * w + x - 1] & 0xFF;
+        int q = g[(y + 1) * w + x] & 0xFF;
+        int r = g[(y + 1) * w + x + 1] & 0xFF;
+        int gx = (c + 2 * f + r) - (a + 2 * d + p);
+        int gy = (p + 2 * q + r) - (a + 2 * b + c);
+        return Math.min(1f, (Math.abs(gx) + Math.abs(gy)) / 400f);
     }
 
     @Override

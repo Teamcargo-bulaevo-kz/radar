@@ -12,6 +12,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Range;
 import android.view.View;
+import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -38,6 +39,7 @@ public final class ServiceTab implements Tab {
     private final TextView out;
     private final PlotView resp;
     private final Handler ui = new Handler(Looper.getMainLooper());
+    private Button quietBtn;
 
     public ServiceTab(Context ctx, SonarHub hub, PermissionHost host) {
         this.c = ctx;
@@ -104,6 +106,18 @@ public final class ServiceTab implements Tab {
         }), Ui.cell(ctx));
         col.addView(r4);
 
+        LinearLayout r6 = Ui.row(ctx);
+        quietBtn = Ui.button(ctx, "", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                ServiceTab.this.hub.setQuiet(!ServiceTab.this.hub.st.quiet);
+                updateQuiet();
+            }
+        });
+        r6.addView(quietBtn, Ui.cell(ctx));
+        col.addView(r6, 1);
+        updateQuiet();
+
         LinearLayout r5 = Ui.row(ctx);
         r5.addView(Ui.button(ctx, "Камеры: глубина, темнота, ИК", new View.OnClickListener() {
             @Override
@@ -159,6 +173,13 @@ public final class ServiceTab implements Tab {
                     + "твёрдые поверхности: стены, шкафы, люди. Мягкое (диваны, шторы) поглощает звук. Дальность в комнате "
                     + "3–7 м. Ультразвук может беспокоить животных и некоторых людей: если слышен свист или мешает — "
                     + "уменьшите громкость.";
+
+    private void updateQuiet() {
+        quietBtn.setText(hub.st.quiet
+                ? "🌙 Тихий режим (ночь): ультразвук, вибрация вместо звуков — нажать для обычного"
+                : "🔊 Обычный режим звука — нажать для тихого (ночь)");
+        Ui.setOn(quietBtn, hub.st.quiet);
+    }
 
     @Override
     public String title() {
@@ -317,6 +338,10 @@ public final class ServiceTab implements Tab {
                     return;
                 }
                 AudioUtil.setMusicVolumeMax(c);
+                if (hub.st.quiet) {
+                    android.widget.Toast.makeText(c, "Тихий режим, но этот тест 8 секунд посвистит — так он проверяет "
+                            + "все частоты", android.widget.Toast.LENGTH_LONG).show();
+                }
                 out.setText("Не закрывайте динамик (нижний торец) и микрофон пальцами. Будет слышен свист — это нормально.");
                 resp.setVisibility(View.GONE);
                 calibrator.start(new BandCalibrator.Callback() {

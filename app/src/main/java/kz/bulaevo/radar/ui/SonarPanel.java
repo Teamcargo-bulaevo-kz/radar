@@ -21,6 +21,7 @@ public final class SonarPanel {
     private final Button band;
     private final Button range;
     private final Button leak;
+    private final Button quietBtn;
     private final TextView status;
     private final Handler h = new Handler(Looper.getMainLooper());
     private boolean shown;
@@ -59,7 +60,9 @@ public final class SonarPanel {
         band = Ui.button(c, "", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                SonarPanel.this.hub.st.band = (SonarPanel.this.hub.st.band + 1) % Bands.NAMES.length;
+                // в тихом режиме листаем только неслышимые диапазоны
+                int nb = SonarPanel.this.hub.st.quiet ? 4 : Bands.NAMES.length;
+                SonarPanel.this.hub.st.band = (SonarPanel.this.hub.effectiveBand() + 1) % nb;
                 SonarPanel.this.hub.applySettings();
                 refresh();
             }
@@ -95,8 +98,16 @@ public final class SonarPanel {
                 refresh();
             }
         });
+        quietBtn = Ui.button(c, "", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SonarPanel.this.hub.setQuiet(!SonarPanel.this.hub.st.quiet);
+                refresh();
+            }
+        });
         r2.addView(leak, Ui.cell(c));
         r2.addView(vol, Ui.cell(c));
+        r2.addView(quietBtn, Ui.cell(c));
 
         status = Ui.label(c, "", 12f, Ui.DIM);
         status.setPadding(Ui.dpi(c, 4), Ui.dpi(c, 2), Ui.dpi(c, 4), 0);
@@ -130,7 +141,9 @@ public final class SonarPanel {
     private void refresh() {
         start.setText(hub.isRunning() ? "Стоп" : "Старт");
         Ui.setOn(start, hub.isRunning());
-        band.setText(Bands.NAMES[hub.st.band]);
+        band.setText(Bands.NAMES[hub.effectiveBand()]);
+        quietBtn.setText(hub.st.quiet ? "🌙 Тихо" : "🔊 Обычный");
+        Ui.setOn(quietBtn, hub.st.quiet);
         range.setText("до " + Bands.RANGE_NAMES[hub.st.range]);
         if (hub.isCalibrating()) {
             leak.setText("Калибровка…");
@@ -141,7 +154,12 @@ public final class SonarPanel {
         }
         Ui.setOn(leak, hub.hasLeak());
         StringBuilder sb = new StringBuilder(hub.statusLine());
-        if (Bands.AUDIBLE[hub.st.band]) {
+        if (hub.st.quiet) {
+            sb.append("\nТихий режим: только ультразвук, вместо гудков — вибрация.");
+            if (Bands.AUDIBLE[hub.st.band]) {
+                sb.append(" Подобранный диапазон был слышимым — в тишине сонар может видеть хуже.");
+            }
+        } else if (Bands.AUDIBLE[hub.st.band]) {
             sb.append("\nДиапазон слышимый: будет слышен свист.");
         }
         sb.append("\nГромкость медиа: ").append(AudioUtil.musicVolumePercent(ctx)).append("%");

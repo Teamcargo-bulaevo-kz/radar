@@ -88,7 +88,10 @@ public final class MagTab implements Tab, SensorEventListener {
             if (beepOn && Math.abs(delta) > 2f) {
                 long interval = (long) Math.max(70, Math.min(700, 700 / (Math.abs(delta) / 2f)));
                 long now = System.currentTimeMillis();
-                if (now - lastBeep >= interval) {
+                if (now - lastBeep >= interval && kz.bulaevo.radar.SonarSettings.isQuiet(c)) {
+                    lastBeep = now;
+                    Haptics.pulse(c, 20); // тихий режим: вибрация вместо писка
+                } else if (now - lastBeep >= interval) {
                     lastBeep = now;
                     try {
                         if (tone == null) {

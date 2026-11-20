@@ -147,7 +147,7 @@ public class MainActivity extends Activity implements PermissionHost {
                     if (start) {
                         hub.start();
                     }
-                    if ("depth".equals(act)) {
+                    if ("depth".equals(act) || "depth_ai".equals(act)) {
                         depthTab.debugAction(act);
                     } else if (act != null && act.startsWith("pulse_")) {
                         pulseTab.debugAction(act);

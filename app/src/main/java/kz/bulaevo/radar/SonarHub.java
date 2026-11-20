@@ -130,13 +130,39 @@ public final class SonarHub implements SonarEngine.Listener {
         startEngine();
     }
 
+    /** Диапазон, на котором реально работает сонар: в тихом режиме слышимый заменяется ультразвуком 16–20 кГц. */
+    public int effectiveBand() {
+        return st.quiet && Bands.AUDIBLE[st.band] ? 2 : st.band;
+    }
+
+    /** Звучат ли гудки парктроника (в тихом режиме — нет). */
+    private boolean beepActive() {
+        return st.beep && !st.quiet;
+    }
+
+    /** Вибро-парктроник: включён сам или заменяет гудки в тихом режиме. */
+    public boolean vibroOn() {
+        return st.vibro || (st.quiet && st.beep);
+    }
+
+    /** Тихий режим: сонар перезапускается в ультразвуке, гудки заменяются вибрацией. */
+    public void setQuiet(boolean on) {
+        st.quiet = on;
+        st.save(ctx);
+        if (engine.isRunning() && (engine.band() != effectiveBand() || startedWithBeep != beepActive())) {
+            startEngine();
+        } else {
+            syncBeeper();
+        }
+    }
+
     private void startEngine() {
-        startedWithBeep = st.beep;
+        startedWithBeep = beepActive();
         nearN = 0;
         nearMissed = 0;
         smoothNearest = Float.NaN;
         sectors.reset();
-        engine.start(st.band, st.range, st.beep ? st.txAmp * Beeper.SONAR_SCALE : st.txAmp);
+        engine.start(effectiveBand(), st.range, beepActive() ? st.txAmp * Beeper.SONAR_SCALE : st.txAmp);
         SonarProcessor p = engine.processor();
         if (p != null) {
             p.detectDb = st.detectDb;
@@ -147,7 +173,7 @@ public final class SonarHub implements SonarEngine.Listener {
     /** Включить/выключить гудки в соответствии с настройками и состоянием сонара. */
     private void syncBeeper() {
         beeper.setMaxDistance(st.beepMaxM);
-        if (engine.isRunning() && st.beep) {
+        if (engine.isRunning() && beepActive()) {
             beeper.start();
         } else {
             beeper.stop();
@@ -158,7 +184,7 @@ public final class SonarHub implements SonarEngine.Listener {
     public void setBeep(boolean on) {
         st.beep = on;
         st.save(ctx);
-        if (engine.isRunning() && startedWithBeep != on) {
+        if (engine.isRunning() && startedWithBeep != beepActive()) {
             startEngine();
         } else {
             syncBeeper();
@@ -189,7 +215,7 @@ public final class SonarHub implements SonarEngine.Listener {
         if (p != null) {
             p.detectDb = st.detectDb;
         }
-        if (engine.isRunning() && (engine.band() != st.band || engine.rangeIdx() != st.range)) {
+        if (engine.isRunning() && (engine.band() != effectiveBand() || engine.rangeIdx() != st.range)) {
             startEngine();
         }
     }

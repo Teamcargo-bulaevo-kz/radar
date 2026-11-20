@@ -125,7 +125,7 @@ public final class WalkTab implements Tab {
 
         // вибрация по ближайшему эху луча
         float d = hub.smoothNearest();
-        if (hub.st.vibro && hub.isRunning() && !Float.isNaN(d) && d < 1.5f) {
+        if (hub.vibroOn() && hub.isRunning() && !Float.isNaN(d) && d < 1.5f) {
             long interval = (long) Math.max(90, Math.min(700, d * 420));
             if (now - lastPulse >= interval) {
                 lastPulse = now;

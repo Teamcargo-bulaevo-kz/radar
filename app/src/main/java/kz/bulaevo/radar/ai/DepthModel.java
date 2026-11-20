@@ -61,7 +61,7 @@ public final class DepthModel {
         return f.isFile() && f.length() > 1_000_000L && isTflite(f);
     }
 
-    private static boolean isTflite(File f) {
+    static boolean isTflite(File f) {
         byte[] b = new byte[8];
         try (FileInputStream is = new FileInputStream(f)) {
             if (is.read(b) != 8) {
@@ -109,7 +109,7 @@ public final class DepthModel {
         return last;
     }
 
-    private static void fetch(String url, File to, Progress p) throws IOException {
+    static void fetch(String url, File to, Progress p) throws IOException {
         for (int hop = 0; hop < 6; hop++) {
             HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
             con.setInstanceFollowRedirects(false);

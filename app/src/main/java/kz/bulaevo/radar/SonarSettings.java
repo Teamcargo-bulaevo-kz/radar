@@ -25,6 +25,8 @@ public final class SonarSettings {
     public boolean beepChosen = false;
     /** Вибро-парктроник. */
     public boolean vibro = false;
+    /** Тихий режим (ночь): только ультразвук, вместо гудков и писка — вибрация. */
+    public boolean quiet = false;
     /** С какого расстояния гудеть, м. */
     public float beepMaxM = 3f;
 
@@ -44,6 +46,7 @@ public final class SonarSettings {
         beep = p.getBoolean("beep", beep);
         vibro = p.getBoolean("vibro", vibro);
         beepMaxM = p.getFloat("beepMaxM", beepMaxM);
+        quiet = p.getBoolean("quiet", quiet);
     }
 
     public void save(Context c) {
@@ -56,7 +59,13 @@ public final class SonarSettings {
                 .putBoolean("beep", beep)
                 .putBoolean("vibro", vibro)
                 .putFloat("beepMaxM", beepMaxM)
+                .putBoolean("quiet", quiet)
                 .apply();
+    }
+
+    /** Тихий режим — для экранов, у которых нет доступа к сонару. */
+    public static boolean isQuiet(Context c) {
+        return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("quiet", false);
     }
 
     private static int clamp(int v, int lo, int hi) {

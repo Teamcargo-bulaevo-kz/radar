@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="kz.bulaevo.radar.SelfTestTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-11-20T19:10:16" hostname="runnervm0hi8g" time="0.726">
+  <properties/>
+  <testcase name="sonarMathWorksOnSimulatedRoom" classname="kz.bulaevo.radar.SelfTestTest" time="0.726"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

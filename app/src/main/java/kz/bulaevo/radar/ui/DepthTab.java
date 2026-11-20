@@ -101,7 +101,7 @@ public final class DepthTab implements Tab, NightCamera.Callback {
                             : String.format(Locale.US, "Сонар: ближайшее %.2f м", nr))
                             : "Сонар: запуск…";
                 } else {
-                    l3 = "Метры: включите «Сонар» (нижний край телефона — в ту же сторону, что и камера)";
+                    l3 = "Метры: включите «Сонар»";
                 }
             }
             view.setHud(l1, l2, l3);
@@ -232,6 +232,9 @@ public final class DepthTab implements Tab, NightCamera.Callback {
         sonarOn = on;
         Ui.setOn(sonarBtn, on);
         if (on) {
+            android.widget.Toast.makeText(c, "Метры будут точнее, если нижний край телефона (динамик) "
+                    + "смотрит туда же, куда и камера: держите телефон наклонённым к препятствию.",
+                    android.widget.Toast.LENGTH_LONG).show();
             hub.start();
         } else {
             hub.stop();

@@ -108,7 +108,7 @@ public class MainActivity extends Activity implements PermissionHost {
         handleIntent(intent);
     }
 
-    /** Служебные параметры запуска для автопроверки: tab=N, start=true, act=selftest|calibrate|info. */
+    /** Служебные параметры запуска для автопроверки: tab=N, start=true, act=selftest|calibrate|info|cameras|headphones. */
     private void handleIntent(android.content.Intent in) {
         if (in == null) {
             return;

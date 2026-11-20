@@ -31,9 +31,9 @@ if [ -f tools/tabs.txt ]; then
   done < tools/tabs.txt
 fi
 
-# Сервис: самотест, сведения об устройстве, подбор диапазона
+# Сервис: самотест, сведения об устройстве, камеры, подбор диапазона
 last=$((i - 1))
-for act in selftest info calibrate headphones; do
+for act in selftest info cameras calibrate headphones; do
   launch --ei tab "$last" --es act "$act"
   sleep 14
   shot "svc_$act"

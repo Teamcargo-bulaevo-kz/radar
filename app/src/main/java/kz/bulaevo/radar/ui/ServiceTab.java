@@ -22,6 +22,7 @@ import kz.bulaevo.radar.PermissionHost;
 import kz.bulaevo.radar.SonarHub;
 import kz.bulaevo.radar.audio.AudioUtil;
 import kz.bulaevo.radar.audio.BandCalibrator;
+import kz.bulaevo.radar.camera.CameraProbe;
 import kz.bulaevo.radar.dsp.Bands;
 import kz.bulaevo.radar.dsp.ResponseAnalyzer;
 import kz.bulaevo.radar.dsp.SelfTest;
@@ -103,6 +104,21 @@ public final class ServiceTab implements Tab {
         }), Ui.cell(ctx));
         col.addView(r4);
 
+        LinearLayout r5 = Ui.row(ctx);
+        r5.addView(Ui.button(ctx, "Камеры: глубина, темнота, ИК", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showCameraProbe();
+            }
+        }), Ui.cell(ctx));
+        r5.addView(Ui.button(ctx, "Мигнуть ИК-портом (15 с)", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                runIrBlink();
+            }
+        }), Ui.cell(ctx));
+        col.addView(r5);
+
         status = Ui.label(ctx, "", 13f, Ui.WARN);
         status.setPadding(0, Ui.dpi(ctx, 8), 0, Ui.dpi(ctx, 2));
         col.addView(status);
@@ -169,6 +185,8 @@ public final class ServiceTab implements Tab {
             showDeviceInfo();
         } else if ("headphones".equals(act)) {
             runHeadphoneTest();
+        } else if ("cameras".equals(act)) {
+            showCameraProbe();
         }
     }
 
@@ -358,6 +376,50 @@ public final class ServiceTab implements Tab {
             }
         }
         out.setText(sb.toString());
+    }
+
+    // ---- камеры: глубина, темнота, ИК ----
+
+    private void showCameraProbe() {
+        status.setText("");
+        resp.setVisibility(View.GONE);
+        out.setText(CameraProbe.report(c));
+    }
+
+    private volatile boolean irBusy;
+
+    private void runIrBlink() {
+        if (irBusy) {
+            return;
+        }
+        android.hardware.ConsumerIrManager ir = CameraProbe.irManager(c);
+        resp.setVisibility(View.GONE);
+        if (ir == null || !ir.hasIrEmitter()) {
+            status.setText("ИК-порта в этом телефоне нет");
+            return;
+        }
+        irBusy = true;
+        status.setText("ИК-порт мигает 15 секунд…");
+        out.setText("Видит ли камера инфракрасный свет:\n\n"
+                + "• Есть второй телефон: откройте на нём камеру и направьте на верхний торец этого телефона "
+                + "(там маленькое тёмное окошко ИК-порта). Видно мигающую точку — та камера видит ИК.\n\n"
+                + "• Есть зеркало: откройте камеру этого телефона (сначала фронтальную, потом заднюю) и "
+                + "направьте верхний торец на зеркало под углом, чтобы окошко было видно в кадре.\n\n"
+                + "Глазом мигание не видно — так и должно быть, это инфракрасный свет. Если не успели, "
+                + "нажмите кнопку ещё раз.");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final String err = CameraProbe.blinkIr(c, 15);
+                ui.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        irBusy = false;
+                        status.setText(err == null ? "ИК-порт: мигание закончено" : err);
+                    }
+                });
+            }
+        }, "ir-blink").start();
     }
 
     // ---- сведения об устройстве ----

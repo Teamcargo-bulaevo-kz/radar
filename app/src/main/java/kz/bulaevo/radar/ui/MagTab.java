@@ -18,6 +18,8 @@ import android.widget.TextView;
 
 import java.util.Locale;
 
+import kz.bulaevo.radar.dsp.MagScan;
+
 /**
  * Вкладка "Металл": магнитометр телефона как детектор металла и проводки.
  * Поднесите телефон к предмету: поле искажается, значение меняется, частота писка растёт.
@@ -32,6 +34,9 @@ public final class MagTab implements Tab, SensorEventListener {
     private final TextView sub;
     private final PlotView plot;
     private final Button beepBtn;
+    private final Button rowBtn;
+    private final HeatmapView heat;
+    private final MagScan scan = new MagScan();
     private final Handler h = new Handler(Looper.getMainLooper());
     private final float[] hist = new float[HIST];
     private final float[] ordered = new float[HIST];
@@ -120,6 +125,10 @@ public final class MagTab implements Tab, SensorEventListener {
         plot.setLineColor(0xFF6AB8FF);
         root.addView(plot, Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
+        heat = new HeatmapView(ctx);
+        heat.setData(new float[0][0], "Карта стены: нажмите «▶ Строка» и ведите телефон");
+        root.addView(heat, Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT, 0, 0.8f));
+
         LinearLayout row = Ui.row(ctx);
         row.addView(Ui.button(ctx, "Обнулить здесь", new View.OnClickListener() {
             @Override
@@ -139,13 +148,51 @@ public final class MagTab implements Tab, SensorEventListener {
         row.setPadding(Ui.dpi(ctx, 6), Ui.dpi(ctx, 4), Ui.dpi(ctx, 6), 0);
         root.addView(row);
 
+        LinearLayout row2 = Ui.row(ctx);
+        rowBtn = Ui.button(ctx, "▶ Строка", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleRow();
+            }
+        });
+        row2.addView(rowBtn, Ui.cell(ctx));
+        row2.addView(Ui.button(ctx, "Очистить карту", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                scan.clear();
+                rowBtn.setText("▶ Строка");
+                Ui.setOn(rowBtn, false);
+                heat.setData(new float[0][0], "Карта очищена");
+            }
+        }), Ui.cell(ctx));
+        row2.setPadding(Ui.dpi(ctx, 6), 0, Ui.dpi(ctx, 6), 0);
+        root.addView(row2);
+
         TextView hint = Ui.label(ctx,
                 "Нажмите «Обнулить» вдали от металла, затем водите телефоном вдоль стены или предмета. "
-                        + "Скачок значения — арматура, трубы, проводка под током, магниты, телефон/техника рядом. "
-                        + "Работает на близком расстоянии (несколько сантиметров). Держите задней частью телефона к предмету.",
+                        + "Скачок значения — арматура, трубы, проводка под током, магниты, техника рядом. "
+                        + "Карта стены: приложите телефон к левому краю, «▶ Строка», ровно ведите вправо за 3–5 с, "
+                        + "«■» — конец строки; следующую строку — на ладонь ниже. Видно на 2–5 см вглубь.",
                 11f, Ui.DIM);
         hint.setPadding(Ui.dpi(ctx, 8), Ui.dpi(ctx, 4), Ui.dpi(ctx, 8), Ui.dpi(ctx, 8));
         root.addView(hint);
+    }
+
+    private void toggleRow() {
+        if (!scan.isRecording()) {
+            scan.startRow();
+            rowBtn.setText("■ Конец строки");
+            Ui.setOn(rowBtn, true);
+        } else {
+            boolean saved = scan.endRow();
+            rowBtn.setText("▶ Строка");
+            Ui.setOn(rowBtn, false);
+            if (!saved) {
+                android.widget.Toast.makeText(c, "Строка слишком короткая — ведите телефон 3–5 секунд",
+                        android.widget.Toast.LENGTH_SHORT).show();
+            }
+            heat.setData(scan.anomalies(), "");
+        }
     }
 
     @Override
@@ -176,6 +223,9 @@ public final class MagTab implements Tab, SensorEventListener {
     public void onHide() {
         shown = false;
         h.removeCallbacks(ticker);
+        if (scan.isRecording()) {
+            toggleRow();
+        }
         if (registered) {
             sm.unregisterListener(this);
             registered = false;
@@ -193,6 +243,7 @@ public final class MagTab implements Tab, SensorEventListener {
         float z = e.values[2];
         float m = (float) Math.sqrt(x * x + y * y + z * z);
         current = m;
+        scan.add(m);
         smooth = smooth == 0f ? m : smooth + 0.35f * (m - smooth);
         hist[histPos] = smooth;
         histPos = (histPos + 1) % HIST;

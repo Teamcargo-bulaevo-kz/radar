@@ -35,6 +35,11 @@ public final class NightCamera {
         void onError(String message);
     }
 
+    /** Если колбэк это реализует — получает средние Y, U, V по центру кадра (для пульса). */
+    public interface RoiListener {
+        void onRoi(float y, float u, float v, long timeMs);
+    }
+
     private final Context ctx;
     private HandlerThread thread;
     private Handler handler;
@@ -46,6 +51,12 @@ public final class NightCamera {
     private volatile boolean open;
     private volatile int mode;
     private volatile boolean aeLock;
+    private volatile boolean torch;
+    private volatile boolean shortExposure;
+    /** Время чтения всего кадра матрицей, нс (0 — неизвестно). */
+    private volatile long skewNs;
+    /** Доля кадра по ширине/высоте для центра (RoiListener). */
+    private volatile float roiFrac = 0.3f;
 
     private int sensorOrientation = 90;
     private boolean frontFacing;
@@ -79,6 +90,11 @@ public final class NightCamera {
     /** front — открыть фронтальную камеру (если её нет — заднюю). */
     public synchronized void open(final Callback callback, int startMode, boolean front) {
         close();
+        // настройки прошлого режима не переносим
+        torch = false;
+        shortExposure = false;
+        aeLock = false;
+        skewNs = 0;
         cb = callback;
         mode = startMode;
         thread = new HandlerThread("night-camera");
@@ -223,6 +239,37 @@ public final class NightCamera {
         setMode(mode);
     }
 
+    /** Фонарик (вспышка) — для пульса по пальцу. */
+    public void setTorch(boolean on) {
+        torch = on;
+        setMode(mode);
+    }
+
+    /** Короткая выдержка без защиты от мерцания: чтобы полосы от ламп были видны. */
+    public void setShortExposure(boolean on) {
+        shortExposure = on;
+        setMode(mode);
+    }
+
+    public void setRoiFraction(float f) {
+        roiFrac = f;
+    }
+
+    public long rollingShutterSkewNs() {
+        return skewNs;
+    }
+
+    private final CameraCaptureSession.CaptureCallback resultCb = new CameraCaptureSession.CaptureCallback() {
+        @Override
+        public void onCaptureCompleted(CameraCaptureSession s, CaptureRequest r,
+                                       android.hardware.camera2.TotalCaptureResult res) {
+            Long sk = res.get(android.hardware.camera2.CaptureResult.SENSOR_ROLLING_SHUTTER_SKEW);
+            if (sk != null && sk > 0) {
+                skewNs = sk;
+            }
+        }
+    };
+
     /** Сменить режим на лету: 0 авто, 1 ночь, 2 ночь+, 3 ИК. */
     public void setMode(int m) {
         mode = m;
@@ -291,12 +338,30 @@ public final class NightCamera {
             } else if (mode >= 2) {
                 desc = (mode >= 3 ? "ИК" : "ночь") + " (ручной режим камерой не поддерживается)";
             }
+            if (torch) {
+                b.set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_TORCH);
+                desc += ", фонарик";
+            }
+            if (shortExposure) {
+                b.set(CaptureRequest.CONTROL_AE_ANTIBANDING_MODE, CaptureRequest.CONTROL_AE_ANTIBANDING_MODE_OFF);
+                Range<Long> exp = chars.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE);
+                Range<Integer> iso = chars.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE);
+                if (manualSupported() && exp != null && iso != null) {
+                    long t = Math.max(exp.getLower(), 1_000_000L); // 1/1000 с
+                    b.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF);
+                    b.set(CaptureRequest.SENSOR_EXPOSURE_TIME, t);
+                    b.set(CaptureRequest.SENSOR_SENSITIVITY, Math.min(iso.getUpper(), 1600));
+                    desc = "выдержка 1/" + Math.round(1e9 / t) + " с";
+                } else {
+                    desc = "авто без защиты от мерцания";
+                }
+            }
             if (aeLock) {
                 b.set(CaptureRequest.CONTROL_AE_LOCK, true);
                 b.set(CaptureRequest.CONTROL_AWB_LOCK, true);
                 desc += ", экспозиция заморожена";
             }
-            s.setRepeatingRequest(b.build(), null, handler);
+            s.setRepeatingRequest(b.build(), resultCb, handler);
             Callback c = cb;
             if (c != null) {
                 c.onInfo(desc);
@@ -346,6 +411,9 @@ public final class NightCamera {
                 }
             }
             Callback c = cb;
+            if (c instanceof RoiListener) {
+                roiStats(img, w, h, (RoiListener) c);
+            }
             if (c != null) {
                 c.onFrame(y, w, h);
             }
@@ -355,6 +423,48 @@ public final class NightCamera {
             if (img != null) {
                 img.close();
             }
+        }
+    }
+
+    /** Средние Y, U, V по центральному прямоугольнику кадра. */
+    private void roiStats(Image img, int w, int h, RoiListener l) {
+        Image.Plane[] pl = img.getPlanes();
+        float f = roiFrac;
+        int x0 = (int) (w * (1 - f) / 2);
+        int x1 = (int) (w * (1 + f) / 2);
+        int y0 = (int) (h * (1 - f) / 2);
+        int y1 = (int) (h * (1 + f) / 2);
+        byte[] yb = ybuf;
+        long sy = 0;
+        int ny = 0;
+        for (int yy = y0; yy < y1; yy += 2) {
+            for (int xx = x0; xx < x1; xx += 2) {
+                sy += yb[yy * w + xx] & 0xFF;
+                ny++;
+            }
+        }
+        long su = 0;
+        long sv = 0;
+        int nc = 0;
+        ByteBuffer ub = pl[1].getBuffer();
+        ByteBuffer vb = pl[2].getBuffer();
+        int rs = pl[1].getRowStride();
+        int ps = pl[1].getPixelStride();
+        int rs2 = pl[2].getRowStride();
+        int ps2 = pl[2].getPixelStride();
+        for (int yy = y0 / 2; yy < y1 / 2; yy += 2) {
+            for (int xx = x0 / 2; xx < x1 / 2; xx += 2) {
+                int iu = yy * rs + xx * ps;
+                int iv = yy * rs2 + xx * ps2;
+                if (iu < ub.limit() && iv < vb.limit()) {
+                    su += ub.get(iu) & 0xFF;
+                    sv += vb.get(iv) & 0xFF;
+                    nc++;
+                }
+            }
+        }
+        if (ny > 0 && nc > 0) {
+            l.onRoi(sy / (float) ny, su / (float) nc, sv / (float) nc, android.os.SystemClock.elapsedRealtime());
         }
     }
 

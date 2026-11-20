@@ -23,12 +23,14 @@ import kz.bulaevo.radar.ui.DepthTab;
 import kz.bulaevo.radar.ui.MagTab;
 import kz.bulaevo.radar.ui.MapTab;
 import kz.bulaevo.radar.ui.MotionTab;
+import kz.bulaevo.radar.ui.PulseTab;
 import kz.bulaevo.radar.ui.RangeTab;
 import kz.bulaevo.radar.ui.ServiceTab;
 import kz.bulaevo.radar.ui.SpectrumTab;
 import kz.bulaevo.radar.ui.Tab;
 import kz.bulaevo.radar.ui.WalkTab;
 import kz.bulaevo.radar.ui.Ui;
+import kz.bulaevo.radar.ui.VibroTab;
 
 /** Единственный экран: вкладки радара. */
 public class MainActivity extends Activity implements PermissionHost {
@@ -42,6 +44,9 @@ public class MainActivity extends Activity implements PermissionHost {
     private FrameLayout content;
     private ServiceTab serviceTab;
     private DepthTab depthTab;
+    private PulseTab pulseTab;
+    private VibroTab vibroTab;
+    private android.widget.HorizontalScrollView barScroll;
     private int current = -1;
     private boolean resumed;
 
@@ -67,6 +72,10 @@ public class MainActivity extends Activity implements PermissionHost {
         tabs.add(new CameraTab(this, hub, this));
         depthTab = new DepthTab(this, hub, this);
         tabs.add(depthTab);
+        pulseTab = new PulseTab(this, hub, this);
+        tabs.add(pulseTab);
+        vibroTab = new VibroTab(this, this);
+        tabs.add(vibroTab);
         tabs.add(new MagTab(this));
         serviceTab = new ServiceTab(this, hub, this);
         tabs.add(serviceTab);
@@ -89,7 +98,8 @@ public class MainActivity extends Activity implements PermissionHost {
             tv.setTypeface(Typeface.DEFAULT_BOLD);
             tv.setGravity(Gravity.CENTER);
             tv.setSingleLine(true);
-            tv.setPadding(0, Ui.dpi(this, 11), 0, Ui.dpi(this, 11));
+            tv.setPadding(Ui.dpi(this, 10), Ui.dpi(this, 11), Ui.dpi(this, 10), Ui.dpi(this, 11));
+            tv.setMinWidth(Ui.dpi(this, 58));
             tv.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -97,9 +107,16 @@ public class MainActivity extends Activity implements PermissionHost {
                 }
             });
             tabButtons.add(tv);
-            bar.addView(tv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            bar.addView(tv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         }
-        root.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        // вкладок много — панель прокручивается пальцем
+        barScroll = new android.widget.HorizontalScrollView(this);
+        barScroll.setHorizontalScrollBarEnabled(false);
+        barScroll.setFillViewport(true);
+        barScroll.setBackgroundColor(Ui.PANEL);
+        barScroll.addView(bar, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(barScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(root);
         show(0);
         handleIntent(getIntent());
@@ -112,7 +129,7 @@ public class MainActivity extends Activity implements PermissionHost {
         handleIntent(intent);
     }
 
-    /** Служебные параметры запуска для автопроверки: tab=N, start=true, act=selftest|calibrate|info|cameras|headphones|depth. */
+    /** Служебные параметры запуска для автопроверки: tab=N, start=true, act=selftest|calibrate|info|cameras|headphones|depth|pulse_*|vibro_*. */
     private void handleIntent(android.content.Intent in) {
         if (in == null) {
             return;
@@ -132,6 +149,10 @@ public class MainActivity extends Activity implements PermissionHost {
                     }
                     if ("depth".equals(act)) {
                         depthTab.debugAction(act);
+                    } else if (act != null && act.startsWith("pulse_")) {
+                        pulseTab.debugAction(act);
+                    } else if (act != null && act.startsWith("vibro_")) {
+                        vibroTab.debugAction(act);
                     } else if (act != null) {
                         serviceTab.debugAction(act);
                     }
@@ -156,6 +177,16 @@ public class MainActivity extends Activity implements PermissionHost {
             boolean on = i == idx;
             tv.setTextColor(on ? Ui.BG : Ui.DIM);
             tv.setBackgroundColor(on ? Ui.ACC : Ui.PANEL);
+        }
+        if (barScroll != null) {
+            final TextView sel = tabButtons.get(idx);
+            barScroll.post(new Runnable() {
+                @Override
+                public void run() {
+                    int x = sel.getLeft() - (barScroll.getWidth() - sel.getWidth()) / 2;
+                    barScroll.smoothScrollTo(Math.max(0, x), 0);
+                }
+            });
         }
         if (resumed) {
             tabs.get(idx).onShow();

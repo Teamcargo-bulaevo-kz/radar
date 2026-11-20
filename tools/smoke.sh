@@ -49,6 +49,18 @@ if [ -n "$depth" ]; then
   echo "depth tab: model run" >> "$OUT/tabs.log"
 fi
 
+# Пульс и Вибро: включить режимы без нажатий, проверить, что ничего не падает
+for spec in "Пульс:pulse_face" "Пульс:pulse_heart" "Вибро:vibro_motion" "Вибро:vibro_flicker" "Вибро:vibro_accel"; do
+  name=${spec%%:*}
+  act=${spec#*:}
+  line=$(grep -n "^$name" tools/tabs.txt | head -1 | cut -d: -f1)
+  [ -z "$line" ] && continue
+  launch --ei tab "$((line - 1))" --es act "$act"
+  sleep 14
+  shot "$act"
+  echo "$act: done" >> "$OUT/tabs.log"
+done
+
 adb shell dumpsys activity processes 2>/dev/null | grep -i "kz.bulaevo.radar" | head -3 >> "$OUT/tabs.log"
 adb logcat -d > "$OUT/logcat.txt"
 adb logcat -d -s AndroidRuntime:E > "$OUT/crash.txt"

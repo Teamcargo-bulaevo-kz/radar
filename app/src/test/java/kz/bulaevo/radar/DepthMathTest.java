@@ -138,4 +138,24 @@ public class DepthMathTest {
         List<Guide.Item> rel = Guide.describe(boxes, names, 2, d, w, h, 0.2f, 0.9f, Float.NaN);
         assertEquals("стул, прямо, близко", rel.get(0).phrase());
     }
+
+    @Test
+    public void colorConversion() {
+        int w = 4;
+        int h = 2;
+        byte[] y = new byte[w * h];
+        byte[] u = new byte[2];
+        byte[] v = new byte[2];
+        java.util.Arrays.fill(y, (byte) 100);
+        u[0] = (byte) 128; v[0] = (byte) 128;  // левая половина — серая
+        u[1] = (byte) 128; v[1] = (byte) 200;  // правая — красноватая
+        byte[] out = new byte[w * h * 3];
+        DepthMath.sampleUprightRgb(y, u, v, w, h, 0, out, w, h);
+        assertEquals(100, out[0] & 0xFF);
+        assertEquals(100, out[1] & 0xFF);
+        assertEquals(100, out[2] & 0xFF);
+        int r = out[3 * 3] & 0xFF;
+        int g = out[3 * 3 + 1] & 0xFF;
+        assertTrue("красное " + r + " > зелёное " + g, r > 180 && g < 60);
+    }
 }

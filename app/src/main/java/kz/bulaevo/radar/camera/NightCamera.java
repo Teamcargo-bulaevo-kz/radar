@@ -35,6 +35,11 @@ public final class NightCamera {
         void onError(String message);
     }
 
+    /** Если колбэк это реализует — перед onFrame получает цвет кадра: U и V размером (w/2)×(h/2). */
+    public interface ChromaListener {
+        void onChroma(byte[] u, byte[] v, int cw, int ch);
+    }
+
     /** Если колбэк это реализует — получает средние Y, U, V по центру кадра (для пульса). */
     public interface RoiListener {
         void onRoi(float y, float u, float v, long timeMs);
@@ -48,6 +53,8 @@ public final class NightCamera {
     private ImageReader reader;
     private Callback cb;
     private byte[] ybuf;
+    private byte[] ubuf;
+    private byte[] vbuf;
     private volatile boolean open;
     private volatile int mode;
     private volatile boolean aeLock;
@@ -411,6 +418,9 @@ public final class NightCamera {
                 }
             }
             Callback c = cb;
+            if (c instanceof ChromaListener) {
+                chroma(img, w, h, (ChromaListener) c);
+            }
             if (c instanceof RoiListener) {
                 roiStats(img, w, h, (RoiListener) c);
             }
@@ -422,6 +432,33 @@ public final class NightCamera {
         } finally {
             if (img != null) {
                 img.close();
+            }
+        }
+    }
+
+    private void chroma(Image img, int w, int h, ChromaListener l) {
+        int cw = w / 2;
+        int ch = h / 2;
+        if (ubuf == null || ubuf.length != cw * ch) {
+            ubuf = new byte[cw * ch];
+            vbuf = new byte[cw * ch];
+        }
+        Image.Plane[] pl = img.getPlanes();
+        copyPlane(pl[1], ubuf, cw, ch);
+        copyPlane(pl[2], vbuf, cw, ch);
+        l.onChroma(ubuf, vbuf, cw, ch);
+    }
+
+    private static void copyPlane(Image.Plane p, byte[] dst, int cw, int ch) {
+        ByteBuffer b = p.getBuffer();
+        int rs = p.getRowStride();
+        int ps = p.getPixelStride();
+        int lim = b.limit();
+        for (int y = 0; y < ch; y++) {
+            int row = y * rs;
+            for (int x = 0; x < cw; x++) {
+                int i = row + x * ps;
+                dst[y * cw + x] = i < lim ? b.get(i) : (byte) 128;
             }
         }
     }

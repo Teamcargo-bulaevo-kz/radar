@@ -69,6 +69,57 @@ public final class DepthMath {
         }
     }
 
+    /**
+     * Как sampleUpright, но в цвете (r, g, b подряд): яркость Y w×h и цветность U, V (w/2)×(h/2), формат YUV 4:2:0.
+     * Нейросети учились на цветных снимках — с цветом они узнают предметы заметно лучше.
+     */
+    public static void sampleUprightRgb(byte[] y, byte[] u, byte[] v, int w, int h, int rot,
+                                        byte[] dst, int ow, int oh) {
+        int uw = uprightW(w, h, rot);
+        int uh = uprightH(w, h, rot);
+        int cw = w / 2;
+        float sx = uw / (float) ow;
+        float sy = uh / (float) oh;
+        int o = 0;
+        for (int vy = 0; vy < oh; vy++) {
+            int py = Math.min(uh - 1, (int) ((vy + 0.5f) * sy));
+            for (int vx = 0; vx < ow; vx++) {
+                int px = Math.min(uw - 1, (int) ((vx + 0.5f) * sx));
+                int x;
+                int yy;
+                switch (rot) {
+                    case 90:
+                        x = py;
+                        yy = h - 1 - px;
+                        break;
+                    case 180:
+                        x = w - 1 - px;
+                        yy = h - 1 - py;
+                        break;
+                    case 270:
+                        x = w - 1 - py;
+                        yy = px;
+                        break;
+                    default:
+                        x = px;
+                        yy = py;
+                        break;
+                }
+                int lum = y[yy * w + x] & 0xFF;
+                int ci = Math.min(u.length - 1, (yy / 2) * cw + x / 2);
+                int du = (u[ci] & 0xFF) - 128;
+                int dv = (v[ci] & 0xFF) - 128;
+                dst[o++] = (byte) clamp255(lum + 1.402f * dv);
+                dst[o++] = (byte) clamp255(lum - 0.344f * du - 0.714f * dv);
+                dst[o++] = (byte) clamp255(lum + 1.772f * du);
+            }
+        }
+    }
+
+    private static int clamp255(float v) {
+        return v < 0 ? 0 : (v > 255 ? 255 : (int) v);
+    }
+
     private static int clamp(int v, int n) {
         return v < 0 ? 0 : (v >= n ? n - 1 : v);
     }

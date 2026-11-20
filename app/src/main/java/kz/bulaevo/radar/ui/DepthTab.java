@@ -26,7 +26,7 @@ import kz.bulaevo.radar.dsp.DepthMath;
  * Вкладка "Глубина": нейросеть по кадру камеры оценивает, что ближе, что дальше (карта глубины цветом),
  * а сонар даёт масштаб в метрах. Работает и в ИК-режиме камеры (с ИК-фонариком — в темноте).
  */
-public final class DepthTab implements Tab, NightCamera.Callback {
+public final class DepthTab implements Tab, NightCamera.Callback, NightCamera.ChromaListener {
     private static final String[] MODE_NAMES = {"Авто", "Ночь", "Ночь+", "ИК"};
     private static final String[] VIEW_NAMES = {"Смесь", "Глубина", "Контуры", "Рельеф", "Камера"};
     private static final int VIEW_CONTOURS = 2;
@@ -77,6 +77,10 @@ public final class DepthTab implements Tab, NightCamera.Callback {
 
     // кадр для нейросети (копия, пока нейросеть занята — новые кадры пропускаются)
     private byte[] pending;
+    private byte[] pendingU;
+    private byte[] pendingV;
+    private byte[] lastU;
+    private byte[] lastV;
     private int pw;
     private int ph;
     private int prot;
@@ -494,6 +498,14 @@ public final class DepthTab implements Tab, NightCamera.Callback {
                 pending = new byte[y.length];
             }
             System.arraycopy(y, 0, pending, 0, y.length);
+            if (lastU != null) {
+                if (pendingU == null || pendingU.length != lastU.length) {
+                    pendingU = new byte[lastU.length];
+                    pendingV = new byte[lastV.length];
+                }
+                System.arraycopy(lastU, 0, pendingU, 0, lastU.length);
+                System.arraycopy(lastV, 0, pendingV, 0, lastV.length);
+            }
             pw = w;
             ph = hgt;
             prot = rot;
@@ -517,7 +529,11 @@ public final class DepthTab implements Tab, NightCamera.Callback {
 
     private void infer() {
         long t0 = SystemClock.elapsedRealtime();
-        DepthMath.sampleUpright(pending, pw, ph, prot, rgb, model.inW, model.inH, 3);
+        if (hasColor()) {
+            DepthMath.sampleUprightRgb(pending, pendingU, pendingV, pw, ph, prot, rgb, model.inW, model.inH);
+        } else {
+            DepthMath.sampleUpright(pending, pw, ph, prot, rgb, model.inW, model.inH, 3);
+        }
         model.run(rgb, depth);
         float ms = SystemClock.elapsedRealtime() - t0;
         msPerRun = msPerRun == 0 ? ms : msPerRun * 0.8f + ms * 0.2f;
@@ -543,7 +559,11 @@ public final class DepthTab implements Tab, NightCamera.Callback {
 
     /** Распознать предметы на том же кадре и объединить с глубиной и сонаром (поток нейросети). */
     private void runGuide(float sonar) {
-        DepthMath.sampleUpright(pending, pw, ph, prot, detRgb, det.inW, det.inH, 3);
+        if (hasColor()) {
+            DepthMath.sampleUprightRgb(pending, pendingU, pendingV, pw, ph, prot, detRgb, det.inW, det.inH);
+        } else {
+            DepthMath.sampleUpright(pending, pw, ph, prot, detRgb, det.inW, det.inH, 3);
+        }
         java.util.List<ObjectDetector.Det> ds = det.detect(detRgb, 0.5f);
         int n = Math.min(ds.size(), 8);
         float[] boxes = new float[n * 4];
@@ -670,6 +690,17 @@ public final class DepthTab implements Tab, NightCamera.Callback {
         int gx = (c + 2 * f + r) - (a + 2 * d + p);
         int gy = (p + 2 * q + r) - (a + 2 * b + c);
         return Math.min(1f, (Math.abs(gx) + Math.abs(gy)) / 400f);
+    }
+
+    /** Цвет есть и подходит к текущему кадру (в ИК-режиме цвета нет смысла — там всё серое). */
+    private boolean hasColor() {
+        return pendingU != null && pendingU.length == (pw / 2) * (ph / 2) && mode != 3;
+    }
+
+    @Override
+    public void onChroma(byte[] u, byte[] v, int cw, int ch) {
+        lastU = u;
+        lastV = v;
     }
 
     @Override

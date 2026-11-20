@@ -44,6 +44,7 @@ public final class NightCamera {
     private byte[] ybuf;
     private volatile boolean open;
     private volatile int mode;
+    private volatile boolean aeLock;
 
     private int sensorOrientation = 90;
     private boolean frontFacing;
@@ -209,6 +210,12 @@ public final class NightCamera {
         }
     }
 
+    /** Заморозить экспозицию и баланс белого (для ИК-теста: камера не должна сама менять яркость). */
+    public void setAeLock(boolean on) {
+        aeLock = on;
+        setMode(mode);
+    }
+
     /** Сменить режим на лету: 0 авто, 1 ночь, 2 ночь+. */
     public void setMode(int m) {
         mode = m;
@@ -276,6 +283,11 @@ public final class NightCamera {
                 }
             } else if (mode >= 2) {
                 desc = "ночь (ручной режим камерой не поддерживается)";
+            }
+            if (aeLock) {
+                b.set(CaptureRequest.CONTROL_AE_LOCK, true);
+                b.set(CaptureRequest.CONTROL_AWB_LOCK, true);
+                desc += ", экспозиция заморожена";
             }
             s.setRepeatingRequest(b.build(), null, handler);
             Callback c = cb;

@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.MediaStore;
 import android.view.Gravity;
 import android.view.View;
@@ -26,7 +27,9 @@ import java.util.Locale;
 
 import kz.bulaevo.radar.PermissionHost;
 import kz.bulaevo.radar.SonarHub;
+import kz.bulaevo.radar.camera.IrPulser;
 import kz.bulaevo.radar.camera.NightCamera;
+import kz.bulaevo.radar.dsp.IrLockIn;
 import kz.bulaevo.radar.dsp.NightEnhancer;
 
 /**
@@ -53,6 +56,14 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
     private final Button edgeBtn;
     private final Button motBtn;
     private final Button radarBtn;
+    private final Button irBtn;
+    private final IrPulser ir;
+    private volatile boolean irOn;
+    private IrLockIn lock;
+    private volatile int irCycles;
+    private volatile int irVerdict;
+    private volatile float irT;
+    private volatile float irDiff;
     private final Handler h = new Handler(Looper.getMainLooper());
     private final SensorManager sm;
 
@@ -97,6 +108,9 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
             String l2 = String.format(Locale.US, "Яркость кадра %.0f/255 · накопление %s%s", luma, ACC_NAMES[acc],
                     lux >= 0 ? String.format(Locale.US, " · свет %.1f лк", lux) : "");
             String l3 = motion ? String.format(Locale.US, "Движение в кадре: %.0f%%", motionFrac * 100f) : "";
+            if (irOn) {
+                l3 = irStatus();
+            }
             String l4 = "";
             if (radarOn) {
                 float nr = hub.nearest();
@@ -116,6 +130,7 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
         this.hub = hub;
         this.host = host;
         this.cam = new NightCamera(ctx);
+        this.ir = new IrPulser(ctx);
         this.sm = (SensorManager) ctx.getSystemService(Context.SENSOR_SERVICE);
 
         root = new FrameLayout(ctx);
@@ -195,6 +210,12 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
                 setRadar(!radarOn);
             }
         });
+        irBtn = Ui.button(ctx, "ИК", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setIr(!irOn);
+            }
+        });
         Button snap = Ui.button(ctx, "Снимок", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -212,6 +233,7 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
         r2.addView(edgeBtn, Ui.cell(ctx));
         r2.addView(motBtn, Ui.cell(ctx));
         r2.addView(radarBtn, Ui.cell(ctx));
+        r2.addView(irBtn, Ui.cell(ctx));
         r2.addView(snap, Ui.cell(ctx));
         panel.addView(r1);
         panel.addView(r2);
@@ -229,6 +251,82 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
             hub.start();
         } else {
             hub.stop();
+        }
+    }
+
+    // ---- ИК-тест: ИК-порт мигает, кадры «со светом» и «без» сравниваются ----
+
+    private void setIr(boolean on) {
+        if (on && !ir.available()) {
+            Toast.makeText(c, "В этом телефоне нет ИК-порта", Toast.LENGTH_LONG).show();
+            return;
+        }
+        irOn = on;
+        Ui.setOn(irBtn, on);
+        if (on) {
+            irCycles = 0;
+            irVerdict = 0;
+            irT = 0f;
+            irDiff = 0f;
+            if (lock != null) {
+                lock.reset();
+            }
+            cam.setAeLock(true);
+            ir.start();
+            Toast.makeText(c, "ИК-тест. Направьте камеру на светлую стену в 5–15 см и наклоните телефон примерно "
+                    + "на 45°, верхним краем (там ИК-окошко) к стене. Держите неподвижно 20 секунд, лучше в полутьме. "
+                    + "Куда попал ИК-свет — подсветится красным.", Toast.LENGTH_LONG).show();
+        } else {
+            ir.stop();
+            cam.setAeLock(false);
+        }
+    }
+
+    private String irStatus() {
+        String err = ir.error();
+        if (err != null) {
+            return "ИК: " + err;
+        }
+        if (irVerdict > 0) {
+            return String.format(Locale.US, "✔ Камера ВИДИТ ИК: +%.1f ярк., сигнал/шум %.0f (цикл %d)", irDiff, irT, irCycles);
+        }
+        if (irVerdict < 0) {
+            return String.format(Locale.US, "✘ ИК не найден (цикл %d, сигнал/шум %.1f): камера не видит ИК "
+                    + "или свет не попал в кадр — измените наклон", irCycles, irT);
+        }
+        return String.format(Locale.US, "ИК-тест: цикл %d из 8, сигнал/шум %.1f…", irCycles, irT);
+    }
+
+    /** В потоке камеры: учесть кадр в ИК-тесте и подсветить красным блоки, где найден ИК-свет. */
+    private void irFrame(byte[] y, int w, int hgt) {
+        if (lock == null || lock.width() != w || lock.height() != hgt) {
+            lock = new IrLockIn(w, hgt);
+        }
+        long now = SystemClock.elapsedRealtime();
+        lock.addFrame(y, ir.phaseAt(now), ir.cycleAt(now));
+        irCycles = lock.cycles();
+        irVerdict = lock.verdict();
+        irT = lock.maxT;
+        irDiff = lock.maxDiff;
+        int bs = IrLockIn.BLOCK;
+        for (int by = 0; by < lock.gh; by++) {
+            for (int bx = 0; bx < lock.gw; bx++) {
+                float tv = lock.t[by * lock.gw + bx];
+                if (tv < 3f) {
+                    continue;
+                }
+                float a = Math.min(1f, (tv - 3f) / 6f) * 0.75f;
+                for (int yy = 0; yy < bs; yy++) {
+                    int row = (by * bs + yy) * w + bx * bs;
+                    for (int xx = 0; xx < bs; xx++) {
+                        int p = pixels[row + xx];
+                        int r = (int) (((p >> 16) & 0xFF) * (1 - a) + 255 * a);
+                        int g = (int) (((p >> 8) & 0xFF) * (1 - a));
+                        int b = (int) ((p & 0xFF) * (1 - a));
+                        pixels[row + xx] = 0xFF000000 | (r << 16) | (g << 8) | b;
+                    }
+                }
+            }
         }
     }
 
@@ -268,6 +366,9 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
     public void onHide() {
         shown = false;
         h.removeCallbacks(ticker);
+        if (irOn) {
+            setIr(false);
+        }
         cam.close();
         if (registeredLight) {
             sm.unregisterListener(this);
@@ -292,6 +393,9 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
             view.setSensorRotation(cam.sensorOrientation(), cam.isFront());
         }
         enh.process(y, pixels);
+        if (irOn) {
+            irFrame(y, w, hgt);
+        }
         view.setFrame(pixels, w, hgt);
         luma = enh.meanLuma;
         motionFrac = enh.motionFraction;

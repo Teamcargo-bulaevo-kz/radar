@@ -38,7 +38,7 @@ import kz.bulaevo.radar.dsp.NightEnhancer;
  * Помните: камера телефона видит только свет. В полной темноте картинки не будет — там работает сонар.
  */
 public final class CameraTab implements Tab, NightCamera.Callback, SensorEventListener {
-    private static final String[] MODE_NAMES = {"Авто", "Ночь", "Ночь+"};
+    private static final String[] MODE_NAMES = {"Авто", "Ночь", "Ночь+", "ИК"};
     private static final String[] PAL_NAMES = {"Серая", "Ночное зелёное", "Тепловая"};
     private static final float[] ACC_ALPHA = {1f, 0.25f, 0.12f, 0.06f};
     private static final String[] ACC_NAMES = {"×1", "×4", "×8", "×16"};
@@ -159,6 +159,19 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
                 mode = (mode + 1) % MODE_NAMES.length;
                 modeBtn.setText("Режим: " + MODE_NAMES[mode]);
                 cam.setMode(mode);
+                if (mode == 3) {
+                    // ИК: цвета нет, нужна максимальная чувствительность — серая палитра и сильное накопление
+                    pal = 0;
+                    acc = 2;
+                    palBtn.setText("Цвет: " + PAL_NAMES[pal]);
+                    accBtn.setText("Накопление " + ACC_NAMES[acc]);
+                    if (enh != null) {
+                        enh.palette = pal;
+                        enh.alpha = ACC_ALPHA[acc];
+                    }
+                    Toast.makeText(c, "Режим ИК: посветите ИК-фонариком (850 нм). Глазу почти не видно, камере — видно.",
+                            Toast.LENGTH_LONG).show();
+                }
                 if (enh != null) {
                     enh.reset();
                 }
@@ -194,7 +207,7 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
                 }
             }
         });
-        motBtn = Ui.button(ctx, "Движение", new View.OnClickListener() {
+        motBtn = Ui.button(ctx, "Движ.", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 motion = !motion;

@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import kz.bulaevo.radar.ui.CameraTab;
+import kz.bulaevo.radar.ui.DepthTab;
 import kz.bulaevo.radar.ui.MagTab;
 import kz.bulaevo.radar.ui.MapTab;
 import kz.bulaevo.radar.ui.MotionTab;
@@ -40,6 +41,7 @@ public class MainActivity extends Activity implements PermissionHost {
     private final List<TextView> tabButtons = new ArrayList<>();
     private FrameLayout content;
     private ServiceTab serviceTab;
+    private DepthTab depthTab;
     private int current = -1;
     private boolean resumed;
 
@@ -63,6 +65,8 @@ public class MainActivity extends Activity implements PermissionHost {
         tabs.add(new MotionTab(this, hub));
         tabs.add(new SpectrumTab(this, hub, this));
         tabs.add(new CameraTab(this, hub, this));
+        depthTab = new DepthTab(this, hub, this);
+        tabs.add(depthTab);
         tabs.add(new MagTab(this));
         serviceTab = new ServiceTab(this, hub, this);
         tabs.add(serviceTab);
@@ -108,7 +112,7 @@ public class MainActivity extends Activity implements PermissionHost {
         handleIntent(intent);
     }
 
-    /** Служебные параметры запуска для автопроверки: tab=N, start=true, act=selftest|calibrate|info|cameras|headphones. */
+    /** Служебные параметры запуска для автопроверки: tab=N, start=true, act=selftest|calibrate|info|cameras|headphones|depth. */
     private void handleIntent(android.content.Intent in) {
         if (in == null) {
             return;
@@ -126,7 +130,9 @@ public class MainActivity extends Activity implements PermissionHost {
                     if (start) {
                         hub.start();
                     }
-                    if (act != null) {
+                    if ("depth".equals(act)) {
+                        depthTab.debugAction(act);
+                    } else if (act != null) {
                         serviceTab.debugAction(act);
                     }
                 }

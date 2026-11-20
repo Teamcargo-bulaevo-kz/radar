@@ -12,6 +12,11 @@ android {
         targetSdk 34
         versionCode 1
         versionName '1.0'
+
+        // Нейросеть (TensorFlow Lite) — только для процессоров телефонов и x86_64 для эмулятора.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
     }
 
     // Один и тот же ключ для всех сборок: новую версию можно ставить поверх старой без удаления.
@@ -46,5 +51,7 @@ android {
 }
 
 dependencies {
+    // Нейросеть глубины (вкладка «Глубина»). Сама модель скачивается приложением, в APK её нет.
+    implementation 'org.tensorflow:tensorflow-lite:2.16.1'
     testImplementation 'junit:junit:4.13.2'
 }

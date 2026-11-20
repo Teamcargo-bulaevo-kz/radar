@@ -40,6 +40,15 @@ for act in selftest info cameras calibrate headphones; do
   echo "service '$act': done" >> "$OUT/tabs.log"
 done
 
+# Глубина: скачать нейросеть, дать ей поработать на виртуальной комнате эмулятора
+depth=$(grep -n '^Глуб' tools/tabs.txt | head -1 | cut -d: -f1)
+if [ -n "$depth" ]; then
+  launch --ei tab "$((depth - 1))" --es act depth
+  sleep 75
+  shot depth_model
+  echo "depth tab: model run" >> "$OUT/tabs.log"
+fi
+
 adb shell dumpsys activity processes 2>/dev/null | grep -i "kz.bulaevo.radar" | head -3 >> "$OUT/tabs.log"
 adb logcat -d > "$OUT/logcat.txt"
 adb logcat -d -s AndroidRuntime:E > "$OUT/crash.txt"

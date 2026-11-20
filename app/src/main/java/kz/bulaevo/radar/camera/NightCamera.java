@@ -22,7 +22,8 @@ import java.util.Collections;
 /**
  * Камера для ночного режима: отдаёт яркостный (Y) кадр небольшого размера в обработку.
  * Режимы: 0 — авто, 1 — ночь (длинная выдержка за счёт низкой частоты кадров + компенсация экспозиции),
- * 2 — ночь+ (ручная выдержка ~1/8 с и максимальная чувствительность, если камера это умеет).
+ * 2 — ночь+ (ручная выдержка ~1/8 с и максимальная чувствительность, если камера это умеет),
+ * 3 — ИК (как ночь+, но выдержка до 1/4 с: для подсветки ИК-фонариком).
  */
 public final class NightCamera {
     public interface Callback {
@@ -216,7 +217,7 @@ public final class NightCamera {
         setMode(mode);
     }
 
-    /** Сменить режим на лету: 0 авто, 1 ночь, 2 ночь+. */
+    /** Сменить режим на лету: 0 авто, 1 ночь, 2 ночь+, 3 ИК. */
     public void setMode(int m) {
         mode = m;
         if (handler != null) {
@@ -274,15 +275,15 @@ public final class NightCamera {
                 Range<Long> exp = chars.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE);
                 Range<Integer> iso = chars.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE);
                 if (exp != null && iso != null) {
-                    long t = Math.min(exp.getUpper(), 125_000_000L); // не длиннее 1/8 с
+                    long t = Math.min(exp.getUpper(), mode >= 3 ? 250_000_000L : 125_000_000L); // 1/8 с, в ИК — 1/4 с
                     b.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF);
                     b.set(CaptureRequest.SENSOR_EXPOSURE_TIME, t);
                     b.set(CaptureRequest.SENSOR_SENSITIVITY, iso.getUpper());
                     b.set(CaptureRequest.SENSOR_FRAME_DURATION, t);
-                    desc = "ночь+ (1/" + Math.round(1e9 / t) + " с, ISO " + iso.getUpper() + ")";
+                    desc = (mode >= 3 ? "ИК" : "ночь+") + " (1/" + Math.round(1e9 / t) + " с, ISO " + iso.getUpper() + ")";
                 }
             } else if (mode >= 2) {
-                desc = "ночь (ручной режим камерой не поддерживается)";
+                desc = (mode >= 3 ? "ИК" : "ночь") + " (ручной режим камерой не поддерживается)";
             }
             if (aeLock) {
                 b.set(CaptureRequest.CONTROL_AE_LOCK, true);

@@ -39,7 +39,7 @@ import kz.bulaevo.radar.dsp.NightEnhancer;
  */
 public final class CameraTab implements Tab, NightCamera.Callback, SensorEventListener {
     private static final String[] MODE_NAMES = {"Авто", "Ночь", "Ночь+", "ИК"};
-    private static final String[] PAL_NAMES = {"Серая", "Ночное зелёное", "Тепловая"};
+    private static final String[] PAL_NAMES = {"Серый", "Зелёный", "Тепловой"};
     private static final float[] ACC_ALPHA = {1f, 0.25f, 0.12f, 0.06f};
     private static final String[] ACC_NAMES = {"×1", "×4", "×8", "×16"};
 
@@ -259,6 +259,7 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
                 Toast.makeText(c, front ? "Фронтальная камера" : "Задняя камера", Toast.LENGTH_SHORT).show();
             }
         });
+        flipBtn.setTextSize(18f);
         r1.addView(flipBtn, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.5f));
         r1.addView(modeBtn, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.1f));
         r1.addView(palBtn, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.5f));

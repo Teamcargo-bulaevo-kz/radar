@@ -170,6 +170,7 @@ public final class DepthTab implements Tab, NightCamera.Callback {
                         android.widget.Toast.LENGTH_SHORT).show();
             }
         });
+        flipBtn.setTextSize(18f);
         r.addView(flipBtn, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.5f));
         r.addView(modeBtn, Ui.cell(ctx));
         r.addView(viewBtn, Ui.cell(ctx));

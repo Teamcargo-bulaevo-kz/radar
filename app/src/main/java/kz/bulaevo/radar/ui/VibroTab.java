@@ -310,8 +310,13 @@ public final class VibroTab implements Tab, NightCamera.Callback, SensorEventLis
                     break;
                 }
                 if (vib.update()) {
-                    big.setText(String.format(Locale.US, "%.1f Гц · %.2f мм/с", vib.peakHz, vib.velocityMmS));
-                    big.setTextColor(vib.velocityMmS > 4.5 ? Ui.BAD : (vib.velocityMmS > 1.8 ? Ui.WARN : Ui.ACC));
+                    if (Double.isNaN(vib.peakHz) || vib.peakAmp < 0.003) {
+                        big.setText("вибрации нет");
+                        big.setTextColor(Ui.ACC);
+                    } else {
+                        big.setText(String.format(Locale.US, "%.1f Гц · %.2f мм/с", vib.peakHz, vib.velocityMmS));
+                        big.setTextColor(vib.velocityMmS > 4.5 ? Ui.BAD : (vib.velocityMmS > 1.8 ? Ui.WARN : Ui.ACC));
+                    }
                     sub.setText(String.format(Locale.US, "ускорение: всего %.3f м/с², на главной частоте %.3f м/с² · "
                             + "датчик %.0f Гц", vib.rms, vib.peakAmp, vib.fs));
                     int n = vib.spec.length;
@@ -368,7 +373,8 @@ public final class VibroTab implements Tab, NightCamera.Callback, SensorEventLis
             flMod = flicker.modulation;
             // спектр на равной сетке в герцах для графика
             double toHz = 1.0 / (hgt * rowNs * 1e-9);
-            double maxHz = flicker.cycles[flicker.cycles.length - 1] * toHz;
+            // на графике — до 2 кГц: выше лампы почти не мерцают, а подписи не помещаются
+            double maxHz = Math.min(2000.0, flicker.cycles[flicker.cycles.length - 1] * toHz);
             flPlotMaxHz = (float) maxHz;
             int j = 0;
             for (int i = 0; i < flPlot.length; i++) {

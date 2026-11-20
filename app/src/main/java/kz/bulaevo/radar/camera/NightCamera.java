@@ -73,6 +73,11 @@ public final class NightCamera {
     }
 
     public synchronized void open(final Callback callback, int startMode) {
+        open(callback, startMode, false);
+    }
+
+    /** front — открыть фронтальную камеру (если её нет — заднюю). */
+    public synchronized void open(final Callback callback, int startMode, boolean front) {
         close();
         cb = callback;
         mode = startMode;
@@ -81,7 +86,7 @@ public final class NightCamera {
         handler = new Handler(thread.getLooper());
         try {
             CameraManager cm = (CameraManager) ctx.getSystemService(Context.CAMERA_SERVICE);
-            String id = chooseCamera(cm);
+            String id = chooseCamera(cm, front);
             if (id == null) {
                 fail("Камера не найдена");
                 return;
@@ -146,7 +151,8 @@ public final class NightCamera {
         }
     }
 
-    private String chooseCamera(CameraManager cm) throws CameraAccessException {
+    private String chooseCamera(CameraManager cm, boolean front) throws CameraAccessException {
+        int want = front ? CameraCharacteristics.LENS_FACING_FRONT : CameraCharacteristics.LENS_FACING_BACK;
         String any = null;
         for (String id : cm.getCameraIdList()) {
             CameraCharacteristics cc = cm.getCameraCharacteristics(id);
@@ -154,7 +160,7 @@ public final class NightCamera {
             if (any == null) {
                 any = id;
             }
-            if (facing != null && facing == CameraCharacteristics.LENS_FACING_BACK) {
+            if (facing != null && facing == want) {
                 return id;
             }
         }

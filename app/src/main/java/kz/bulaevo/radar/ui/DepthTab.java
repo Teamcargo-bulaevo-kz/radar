@@ -49,6 +49,7 @@ public final class DepthTab implements Tab, NightCamera.Callback {
     private int mode;
     private int viewMode;
     private boolean sonarOn;
+    private boolean front;
     private boolean shown;
     private volatile boolean downloading;
     private volatile String status = "";
@@ -155,6 +156,21 @@ public final class DepthTab implements Tab, NightCamera.Callback {
                 setSonar(!sonarOn);
             }
         });
+        Button flipBtn = Ui.button(ctx, "⇄", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                front = !front;
+                Ui.setOn((Button) v, front);
+                lo = Float.NaN;
+                hi = Float.NaN;
+                if (shown) {
+                    cam.open(DepthTab.this, mode, front);
+                }
+                android.widget.Toast.makeText(c, front ? "Фронтальная камера" : "Задняя камера",
+                        android.widget.Toast.LENGTH_SHORT).show();
+            }
+        });
+        r.addView(flipBtn, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.5f));
         r.addView(modeBtn, Ui.cell(ctx));
         r.addView(viewBtn, Ui.cell(ctx));
         r.addView(sonarBtn, Ui.cell(ctx));
@@ -191,7 +207,7 @@ public final class DepthTab implements Tab, NightCamera.Callback {
             @Override
             public void run() {
                 if (shown) {
-                    cam.open(DepthTab.this, mode);
+                    cam.open(DepthTab.this, mode, front);
                 }
             }
         });
@@ -387,6 +403,18 @@ public final class DepthTab implements Tab, NightCamera.Callback {
                 int gg = (int) (((col >> 8) & 0xFF) * mix + g * (1 - mix));
                 int b = (int) ((col & 0xFF) * mix + g * (1 - mix));
                 px[i] = 0xFF000000 | (r << 16) | (gg << 8) | b;
+            }
+        }
+        if (cam.isFront()) {
+            // фронтальная камера — как в зеркале, привычнее для селфи
+            for (int vy = 0; vy < dh; vy++) {
+                int a = vy * dw;
+                int b = a + dw - 1;
+                while (a < b) {
+                    int t = px[a];
+                    px[a++] = px[b];
+                    px[b--] = t;
+                }
             }
         }
         // перекрестие в центре

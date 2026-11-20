@@ -56,6 +56,7 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
     private final Button edgeBtn;
     private final Button motBtn;
     private final Button radarBtn;
+    private boolean front;
     private final Button irBtn;
     private final IrPulser ir;
     private volatile boolean irOn;
@@ -240,6 +241,25 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
                 });
             }
         });
+        final Button flipBtn = Ui.button(ctx, "⇄", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                front = !front;
+                Ui.setOn((Button) v, front);
+                enh = null; // другая камера — другой поворот и размер кадра
+                if (lock != null) {
+                    lock.reset();
+                }
+                if (shown) {
+                    cam.open(CameraTab.this, mode, front);
+                    if (irOn) {
+                        cam.setAeLock(true);
+                    }
+                }
+                Toast.makeText(c, front ? "Фронтальная камера" : "Задняя камера", Toast.LENGTH_SHORT).show();
+            }
+        });
+        r1.addView(flipBtn, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.5f));
         r1.addView(modeBtn, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.1f));
         r1.addView(palBtn, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.5f));
         r1.addView(accBtn, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.3f));
@@ -363,7 +383,7 @@ public final class CameraTab implements Tab, NightCamera.Callback, SensorEventLi
             @Override
             public void run() {
                 if (shown) {
-                    cam.open(CameraTab.this, mode);
+                    cam.open(CameraTab.this, mode, front);
                 }
             }
         });

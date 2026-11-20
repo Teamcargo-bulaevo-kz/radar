@@ -1,0 +1,25 @@
+01 tab 'Карта' (index 0): opened
+02 tab 'Дальн.' (index 1): opened
+03 tab 'Ходьба' (index 2): opened
+04 tab 'Движ.' (index 3): opened
+05 tab 'Спектр' (index 4): opened
+06 tab 'Камера' (index 5): opened
+07 tab 'Глуб.' (index 6): opened
+08 tab 'Пульс' (index 7): opened
+09 tab 'Вибро' (index 8): opened
+10 tab 'Металл' (index 9): opened
+11 tab 'Сервис' (index 10): opened
+service 'selftest': done
+service 'info': done
+service 'cameras': done
+service 'calibrate': done
+service 'headphones': done
+depth tab: model run
+pulse_face: done
+pulse_heart: done
+vibro_motion: done
+vibro_flicker: done
+vibro_accel: done
+  *APP* UID 10116 ProcessRecord{9cee690 3463:kz.bulaevo.radar/u0a116}
+    dir=/data/app/kz.bulaevo.radar-J0dkon0O2G9K07ZQa653zg==/base.apk publicDir=/data/app/kz.bulaevo.radar-J0dkon0O2G9K07ZQa653zg==/base.apk data=/data/user/0/kz.bulaevo.radar
+    packageList={kz.bulaevo.radar}
